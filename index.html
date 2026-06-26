@@ -3996,7 +3996,7 @@ function openCommentPopover(anchor, id){
 function openCellEditor(td){
   const id = parseInt(td.dataset.id, 10);
   const col = td.dataset.col;
-  const row = mergedData.find(r=>r.__id===id);
+  const row = mergedData.find(r=>String(r.__id)===String(id));
   if(!row) return;
   const current = getResolvedValue(row, col);
 
@@ -4133,8 +4133,8 @@ function renderManualEditBar(){
 function openCompareModal(){
   const ids = [...selectedRowIds];
   if(ids.length!==2) return;
-  const rowA = mergedData.find(r=>r.__id===ids[0]);
-  const rowB = mergedData.find(r=>r.__id===ids[1]);
+  const rowA = mergedData.find(r=>String(r.__id)===String(ids[0]));
+  const rowB = mergedData.find(r=>String(r.__id)===String(ids[1]));
   if(!rowA||!rowB) return;
 
   const allCols = mergedColumns;
@@ -4350,7 +4350,7 @@ function detectAutoLinks(row){
     if(!pattern) return;
     // buscar a esa persona en mergedData por nombre
     const valNorm = normalizeStr(val);
-    const match = mergedData.find(r=> r.__id!==row.__id && nameSimilarity(normalizeStr(getPersonDisplayName(r)), valNorm) > 0.85);
+    const match = mergedData.find(r=> String(r.__id)!==String(row.__id) && nameSimilarity(normalizeStr(getPersonDisplayName(r)), valNorm) > 0.85);
     if(match){
       found.push({ type: pattern.type, targetId: match.__id, targetName: getPersonDisplayName(match), auto: true });
     } else {
@@ -4545,14 +4545,14 @@ function renderProfilesList(){
 
   listEl.querySelectorAll('.profile-list-item').forEach(el=>{
     el.addEventListener('click', ()=>{
-      activeProfileId = parseInt(el.dataset.id, 10);
+      activeProfileId = el.dataset.id; // string, no parseInt
       listEl.querySelectorAll('.profile-list-item').forEach(e=>e.classList.remove('active'));
       el.classList.add('active');
       renderProfileCard(activeProfileId);
     });
   });
 
-  if(activeProfileId && mergedData.find(r=>r.__id===activeProfileId)) renderProfileCard(activeProfileId);
+  if(activeProfileId && mergedData.find(r=> String(r.__id) === String(activeProfileId))) renderProfileCard(activeProfileId);
 }
 
 // ── Render de la ficha de perfil ────────────────────────────
@@ -4578,7 +4578,7 @@ const SKIP_IN_FIELDS = new Set([
 ]);
 
 function renderProfileCard(id){
-  const row = mergedData.find(r=>r.__id===id);
+  const row = mergedData.find(r=> String(r.__id) === String(id));
   const card = document.getElementById('profileCard');
   const emptyState = document.getElementById('profilesEmptyState');
   if(!row){ card.classList.add('hidden'); emptyState.classList.remove('hidden'); return; }
@@ -4760,7 +4760,7 @@ function renderProfileEvents(id){
 function openAddEventForm(id){
   const form = document.getElementById('addEventForm');
   form.classList.remove('hidden');
-  const personOptions = mergedData.filter(r=>r.__id!==id)
+  const personOptions = mergedData.filter(r=>String(r.__id)!==String(id))
     .map(r=>`<option value="${r.__id}">${escHtml(getPersonDisplayName(r))}</option>`).join('');
   form.innerHTML = `
     <div class="filter-group"><label>Tipo de evento</label>
@@ -4786,7 +4786,7 @@ function openAddEventForm(id){
     const date = document.getElementById('evDate').value;
     const desc = document.getElementById('evDesc').value.trim();
     const relatedId = parseInt(document.getElementById('evRelated').value)||null;
-    const relatedRow = relatedId ? mergedData.find(r=>r.__id===relatedId) : null;
+    const relatedRow = relatedId ? mergedData.find(r=>String(r.__id)===String(relatedId)) : null;
     const relatedName = relatedRow ? getPersonDisplayName(relatedRow) : '';
     const et = EVENT_TYPES.find(t=>t.id===type);
 
@@ -4798,7 +4798,7 @@ function openAddEventForm(id){
       // Crear vínculo mutuo en ambos perfiles
       if(!profileLinks[id]) profileLinks[id]=[];
       if(!profileLinks[relatedId]) profileLinks[relatedId]=[];
-      const myName = getPersonDisplayName(mergedData.find(r=>r.__id===id));
+      const myName = getPersonDisplayName(mergedData.find(r=>String(r.__id)===String(id)));
       profileLinks[id].push({type:et.autoLink, targetId:relatedId, targetName:relatedName, auto:false});
       profileLinks[relatedId].push({type:et.autoLink, targetId:id, targetName:myName, auto:false});
     }
@@ -4808,12 +4808,12 @@ function openAddEventForm(id){
 
     const etLabel = et ? et.label : type;
     addTimelineEntry(id, 'event', etLabel, desc || (relatedName ? `Con ${relatedName}` : ''));
-    if(relatedId) addTimelineEntry(relatedId, 'event', etLabel, `Con ${getPersonDisplayName(mergedData.find(r=>r.__id===id))}`);
+    if(relatedId) addTimelineEntry(relatedId, 'event', etLabel, `Con ${getPersonDisplayName(mergedData.find(r=>String(r.__id)===String(id)))}`);
 
     form.classList.add('hidden');
     renderProfileEvents(id);
     renderProfileTimeline(id);
-    renderProfileLinks(id, mergedData.find(r=>r.__id===id));
+    renderProfileLinks(id, mergedData.find(r=>String(r.__id)===String(id)));
     saveProfilesToStorage();
   };
 }
@@ -4904,8 +4904,8 @@ function renderProfileTimeline(id){
 
   // Agregar automáticamente la importación original como primer evento si no existe
   const hasImport = entries.some(e=>e.type==='import');
-  if(!hasImport && mergedData.find(r=>r.__id===id)){
-    const row = mergedData.find(r=>r.__id===id);
+  if(!hasImport && mergedData.find(r=>String(r.__id)===String(id))){
+    const row = mergedData.find(r=>String(r.__id)===String(id));
     const fuentes = (row.__sources||[]).join(', ');
     // No escribir al array todavía — solo mostrar virtualmente
     const virtualEntry = { ts: null, type:'import', action:'Importado', detail:`Fuentes: ${fuentes}` };
@@ -5128,7 +5128,7 @@ function openAddLinkForm(id){
   const formEl = document.getElementById('addLinkForm');
   formEl.classList.remove('hidden');
   // Armar lista de personas para el select (excluir la actual)
-  const options = mergedData.filter(r=>r.__id!==id)
+  const options = mergedData.filter(r=>String(r.__id)!==String(id))
     .map(r=>`<option value="${r.__id}">${escHtml(getPersonDisplayName(r))}</option>`).join('');
   formEl.innerHTML = `
     <select id="linkTypeSelect">${LINK_TYPE_OPTIONS.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
@@ -5139,13 +5139,13 @@ function openAddLinkForm(id){
   document.getElementById('btnConfirmLink').addEventListener('click', ()=>{
     const type = document.getElementById('linkTypeSelect').value;
     const targetId = parseInt(document.getElementById('linkTargetSelect').value, 10);
-    const targetRow = mergedData.find(r=>r.__id===targetId);
+    const targetRow = mergedData.find(r=>String(r.__id)===String(targetId));
     const targetName = targetRow ? getPersonDisplayName(targetRow) : '?';
     if(!profileLinks[id]) profileLinks[id]=[];
     profileLinks[id].push({ type, targetId, targetName, auto: false });
     addTimelineEntry(id, 'link', `Vínculo agregado: ${type}`, targetName);
     formEl.classList.add('hidden');
-    renderProfileLinks(id, mergedData.find(r=>r.__id===id));
+    renderProfileLinks(id, mergedData.find(r=>String(r.__id)===String(id)));
     renderProfileTimeline(id);
     saveProfilesToStorage();
   });
