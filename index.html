@@ -38,6 +38,65 @@
   }
   @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
 
+  /* Main nav */
+  .main-nav{ display:flex; gap:6px; }
+  .nav-btn{
+    font-family:var(--mono); font-size:12px; font-weight:600; text-transform:uppercase;
+    letter-spacing:0.06em; padding:8px 16px; border-radius:3px; cursor:pointer;
+    border:1px solid var(--border); background:var(--panel-2); color:var(--text-dim);
+    transition: all .15s;
+  }
+  .nav-btn.active{ background:var(--accent); color:var(--panel); border-color:var(--accent); }
+  .nav-btn:hover:not(.active){ color:var(--text); border-color:var(--text); }
+
+  /* Mode layout */
+  #mode-profiles{ height:calc(100vh - 68px); display:flex; flex-direction:column; }
+  #mode-profiles .profiles-layout{ flex:1; overflow:hidden; }
+  #mode-import{ padding:24px; display:flex; flex-direction:column; gap:20px; }
+
+  /* Import progress */
+  .import-progress{
+    display:flex; align-items:center; gap:0;
+    padding:0 4px; margin-bottom:4px;
+  }
+  .import-step{
+    display:flex; align-items:center; gap:8px;
+    padding:10px 16px; border:1px solid var(--border);
+    background:var(--panel-2); border-radius:3px;
+    opacity:0.45;
+  }
+  .import-step.active{ opacity:1; background:var(--panel); border-color:var(--accent); }
+  .import-step.done{ opacity:0.8; border-color:var(--match); }
+  .import-step-num{
+    width:22px; height:22px; border-radius:50%;
+    background:var(--border); color:var(--text-dim);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:11px; font-weight:700; flex-shrink:0;
+  }
+  .import-step.active .import-step-num{ background:var(--accent); color:var(--panel); }
+  .import-step.done .import-step-num{ background:var(--match); color:var(--panel); }
+  .import-step-label{ font-family:var(--mono); font-size:11px; font-weight:600; }
+  .import-step-arrow{ padding:0 8px; color:var(--text-dim); font-size:16px; }
+
+  /* Details (avanzado plegable) */
+  .panel-details{
+    border:1px solid var(--border); border-radius:4px;
+    margin-top:12px; overflow:hidden;
+  }
+  .panel-details summary{
+    padding:10px 14px; cursor:pointer; font-family:var(--mono);
+    font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em;
+    color:var(--text-dim); list-style:none; display:flex; align-items:center; gap:8px;
+    background:var(--panel-2);
+  }
+  .panel-details summary::before{ content:'▶'; font-size:9px; transition:transform .15s; }
+  .panel-details[open] summary::before{ transform:rotate(90deg); }
+  .panel-details summary:hover{ color:var(--text); }
+
+  /* Profiles panel full height */
+  .profiles-overlay{ position:static !important; background:transparent !important; }
+
+  /* App */
   .app{ display:flex; flex-direction:column; min-height:100vh; }
 
   header{
@@ -640,291 +699,294 @@
   </div>
   <header>
     <div class="brand">
-      <span class="mark">DB·MERGE</span>
+      <span class="mark">COMUNIDAD</span>
       <div>
-        <h1>Fusión y depuración de registros</h1>
-        <div class="sub">Cargá bases, definí coincidencias, obtené un perfil único por persona</div>
+        <h1>Gestión de personas</h1>
+        <div class="sub">Buscá, editá y conectá los perfiles de tu comunidad</div>
       </div>
     </div>
-    <div class="steps">
-      <span class="step active" data-step="1">1 · Cargar</span>
-      <span class="step" data-step="2">2 · Coincidencias</span>
-      <span class="step" data-step="3">3 · Revisión</span>
-      <span class="step" data-step="4">4 · Resultado</span>
-      <span class="step" data-step="5">5 · Perfiles</span>
-    </div>
+    <nav class="main-nav">
+      <button class="nav-btn active" id="navProfiles" data-panel="profiles">👤 Perfiles</button>
+      <button class="nav-btn" id="navImport" data-panel="import">📥 Importar base</button>
+    </nav>
   </header>
 
   <main>
 
-    <!-- STEP 1: UPLOAD -->
-    <section class="panel" id="panel-upload">
-      <h2>1. Cargar bases de datos</h2>
-      <div class="desc">Subí archivos .xlsx, .csv o .json. Cada archivo se trata como una fuente distinta.</div>
-
-      <div class="dropzone" id="dropzone">
-        <div class="icon">⇪</div>
-        <div class="main-txt">Arrastrá tus archivos aquí o hacé click para elegir</div>
-        <div class="sub-txt">Formatos soportados: .xlsx · .xls · .csv · .json</div>
-        <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv,.json">
-      </div>
-
-      <div class="sheets-import">
-        <div class="sheets-import-label">O importar desde Google Sheets</div>
-        <div class="sheets-import-row">
-          <input type="text" id="sheetsUrl" placeholder="Pegá la URL de un Google Sheet público…" autocomplete="off">
-          <input type="text" id="sheetsName" placeholder="Nombre (opcional)" style="max-width:160px;">
-          <button class="secondary" id="btnImportSheets">Importar</button>
-        </div>
-        <div class="small-note" id="sheetsStatus"></div>
-      </div>
-
-      <div class="file-list" id="fileList"></div>
-
-      <div class="actions-row">
-        <button class="primary" id="btnLoadDemo" >Cargar datos de prueba</button>
-        <button class="primary hidden" id="btnAutoAnalyze" disabled>⚡ Analizar todo automáticamente →</button>
-        <button class="secondary hidden" id="btnGoMatch" disabled>Ajustar coincidencias manualmente →</button>
-        <button class="secondary" id="btnImportProjectTrigger">📂 Abrir proyecto guardado</button>
-        <input type="file" id="projectFileInput" accept=".json" class="hidden">
-      </div>
-      <div class="small-note">Tip: si no tenés archivos a mano, usá "Cargar datos de prueba" para ver cómo funciona la app con 3 bases de ejemplo (mismas personas repetidas con datos distintos).</div>
-      <div class="small-note">"⚡ Analizar todo automáticamente" detecta las columnas clave (email, teléfono, DNI, nombre, etc.), busca duplicados con la configuración recomendada y te lleva directo al resultado — fusiona automáticamente lo que coincide por email/teléfono/DNI o nombre idéntico. Si después necesitás ajustar algo (otras columnas, sensibilidad, revisar nombres parecidos), podés volver con "← Volver a revisión" o "Ajustar coincidencias manualmente".</div>
-      <div class="small-note">¿Veniás trabajando en esto? "Abrir proyecto guardado" restaura las bases, la configuración, las decisiones de revisión y los cambios manuales tal como quedaron — para retomar donde lo dejaste. El botón para guardar el proyecto está en el paso 4 (Resultado).</div>
-      <div class="small-note" id="projectStatus"></div>
-    </section>
-
-    <!-- STEP 2: MATCH CONFIG -->
-    <section class="panel hidden" id="panel-match">
-      <h2>2. Definir cómo identificar a la misma persona</h2>
-      <div class="desc">Elegí qué columna de cada base corresponde a cada "campo clave". Email, teléfono y DNI/CUIT que coincidan fusionan automáticamente. Las coincidencias por nombre se revisan en el paso siguiente.</div>
-
-      <div id="matchRules"></div>
-
-      <div class="panel-subsection">
-        <h3>Ajustes de coincidencia</h3>
-        <div class="settings-row">
-          <div class="filter-group">
-            <label>Sensibilidad para nombres similares</label>
-            <select id="fuzzyThresholdInput">
-              <option value="100">Solo exactos (desactivar similares)</option>
-              <option value="95">Muy estricta (95%)</option>
-              <option value="85" selected>Recomendada (85%)</option>
-              <option value="75">Permisiva (75%)</option>
-            </select>
+    <!-- ═══ MODO PERFILES (pantalla principal) ═══ -->
+    <div id="mode-profiles">
+      <div class="profiles-layout">
+        <!-- Lista lateral -->
+        <div class="profiles-sidebar">
+          <div class="profiles-sidebar-header">
+            <span class="profiles-count" id="profilesCount"></span>
+            <input type="text" id="profileSearch" placeholder="🔎 Buscar persona…" autocomplete="off">
+            <button class="primary" id="btnNewProfile" style="width:100%; margin-top:6px; font-size:11px; padding:8px;">+ Nuevo perfil manual</button>
           </div>
-          <div class="filter-group">
-            <label>Bonus si coincide la fecha de nacimiento</label>
-            <select id="birthdateBoostInput">
-              <option value="0">No usar</option>
-              <option value="5">+5%</option>
-              <option value="15" selected>+15% (recomendado)</option>
-              <option value="25">+25%</option>
-            </select>
+          <div class="profiles-list" id="profilesList"></div>
+        </div>
+
+        <!-- Ficha de perfil -->
+        <div class="profiles-main" id="profilesMain">
+          <div class="profiles-empty-state" id="profilesEmptyState">
+            <div style="font-size:40px; margin-bottom:16px;">👥</div>
+            <div style="font-size:16px; font-weight:600; margin-bottom:8px;">No hay perfiles todavía</div>
+            <div style="font-size:13px; color:var(--text-dim); max-width:320px; text-align:center; margin-bottom:20px;">Importá una base de datos para generar los perfiles automáticamente, o creá uno a mano.</div>
+            <button class="primary" onclick="switchMode('import')">📥 Importar base de datos</button>
           </div>
-          <div class="filter-group">
-            <label>Bonus si coincide la ciudad</label>
-            <select id="localityBoostInput">
-              <option value="0">No usar</option>
-              <option value="5" selected>+5% (recomendado)</option>
-              <option value="10">+10%</option>
-              <option value="15">+15%</option>
-            </select>
-          </div>
-          <label class="checkbox-row" style="align-self:flex-end; padding-bottom:7px;">
-            <input type="checkbox" id="chkCombineMultiValue" checked>
-            <span>Combinar emails / teléfonos distintos en una sola celda en vez de marcarlos como conflicto</span>
-          </label>
-        </div>
-      </div>
-
-      <div class="panel-subsection">
-        <h3>Unificar columnas (opcional)</h3>
-        <div class="desc">Si dos bases nombran lo mismo de forma distinta (ej. "Teléfono" en una y "Celular" en otra), escribí el mismo nombre en ambas para que se combinen en una sola columna del resultado.</div>
-        <div id="columnUnification"></div>
-      </div>
-
-      <div class="panel-subsection">
-        <h3>Guardar / cargar configuración</h3>
-        <div class="desc">Si vas a procesar bases parecidas seguido (mismas columnas), guardá esta configuración para no repetir los pasos la próxima vez.</div>
-        <div class="actions-row" style="margin-top:0;">
-          <button class="secondary" id="btnExportConfig">💾 Descargar configuración</button>
-          <button class="secondary" id="btnImportConfigTrigger">📂 Cargar configuración</button>
-          <input type="file" id="configFileInput" accept=".json" class="hidden">
-        </div>
-        <div class="small-note" id="configStatus"></div>
-      </div>
-
-      <div class="actions-row">
-        <button class="secondary" id="btnBackUpload">← Volver</button>
-        <button class="primary" id="btnRunMerge">Analizar coincidencias →</button>
-      </div>
-      <div class="small-note">
-        Email, teléfono y DNI/CUIT coinciden automáticamente (con o sin formato/código de país).
-        Las coincidencias por nombre (exactas o similares) se muestran en el paso de revisión para que confirmes cuáles fusionar.
-      </div>
-    </section>
-
-    <!-- STEP 3: REVIEW -->
-    <section class="panel hidden" id="panel-review">
-      <h2>3. Revisar posibles coincidencias</h2>
-      <div class="desc">Estos registros parecen ser la misma persona por su nombre (y, en algunos casos, fecha de nacimiento o ciudad), pero no comparten email/teléfono/DNI. Cada tarjeta agrupa todos los registros que podrían ser la misma persona; marcá qué pares fusionar.</div>
-      <div id="analysisPerformanceStat" style="margin-bottom:10px;"></div>
-
-      <div id="candidatesList"></div>
-
-      <div class="actions-row">
-        <button class="secondary" id="btnBackReview">← Ajustar coincidencias</button>
-        <button class="primary" id="btnContinueToResults">Continuar al resultado →</button>
-      </div>
-    </section>
-
-    <!-- STEP 3: RESULTS -->
-    <section class="panel hidden" id="panel-results">
-      <h2>4. Resultado fusionado</h2>
-      <div class="desc">Tabla unificada. Las celdas en <span style="color:var(--conflict); font-weight:600;">rojo</span> indican conflictos entre bases (pasá el mouse para ver los valores originales).</div>
-
-      <div class="stats-row" id="statsRow"></div>
-
-      <div class="analysis-panels" id="analysisPanels"></div>
-
-      <div class="search-bar">
-        <div class="search-input-wrap">
-          <span class="search-icon">🔎</span>
-          <input type="text" id="globalSearch" placeholder="Buscar en todas las columnas..." autocomplete="off">
-          <span class="search-count" id="searchCount"></span>
-          <button class="search-nav" id="searchPrev" title="Anterior (Shift+Enter)">↑</button>
-          <button class="search-nav" id="searchNext" title="Siguiente (Enter)">↓</button>
-          <button class="search-clear hidden" id="searchClear" title="Limpiar búsqueda">✕</button>
-        </div>
-      </div>
-
-      <div class="filter-bar" id="filterBar"></div>
-      <div class="filter-options-row">
-        <div class="filter-group">
-          <label>Combinar filtros con</label>
-          <select id="filterCombineMode">
-            <option value="AND">Y (deben cumplirse todos)</option>
-            <option value="OR">O (alcanza con uno)</option>
-          </select>
-        </div>
-        <div class="filter-group">
-          <label>&nbsp;</label>
-          <button class="secondary" id="btnSaveView">💾 Guardar vista actual</button>
-        </div>
-      </div>
-      <div class="active-filters" id="activeFilters"></div>
-      <div class="saved-views" id="savedViews"></div>
-      <div class="manual-edit-bar" id="manualEditBar"></div>
-      <div class="manual-edit-bar" id="undoRedoBar"></div>
-
-      <div class="table-wrap">
-        <table id="resultTable">
-          <thead><tr id="tableHead"></tr></thead>
-          <tbody id="tableBody"></tbody>
-        </table>
-      </div>
-      <div class="pagination" id="pagination"></div>
-
-      <div class="panel-subsection">
-        <h3>Configurar exportación</h3>
-        <div class="desc">Elegí qué columnas exportar y en qué orden (arrastrá para reordenar). El ID y las Fuentes siempre se incluyen.</div>
-        <div id="exportColumnsList" class="export-columns-list"></div>
-        <div class="settings-row" style="margin-top:12px;">
-          <div class="filter-group">
-            <label>Base de referencia (para "exportar solo nuevos")</label>
-            <select id="referenceSourceSelect">
-              <option value="">— ninguna —</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div class="export-row">
-        <button class="primary" id="btnExportCsv">Exportar CSV</button>
-        <button class="primary" id="btnExportXlsx">Exportar Excel</button>
-        <button class="primary" id="btnViewProfiles">👤 Ver perfiles →</button>
-        <button class="secondary" id="btnExportNew">Exportar solo nuevos</button>
-        <button class="secondary" id="btnExportAudit">Exportar auditoría de fusión</button>
-        <button class="secondary" id="btnExportProject">💾 Guardar proyecto</button>
-        <button class="secondary" id="btnBackMatch">← Volver a revisión</button>
-      </div>
-      <div class="small-note">"Guardar proyecto" descarga un archivo con todo el estado actual (bases cargadas, configuración, decisiones de revisión, fusiones y ediciones manuales) para retomarlo después con "Abrir proyecto guardado" en el paso 1.</div>
-      <div class="small-note">"Exportar solo nuevos" exporta las personas cuyas fuentes NO incluyen la base de referencia elegida arriba (útil para actualizar un sistema existente con los registros que faltan). La auditoría detalla, para cada persona del resultado, qué fila de qué base se usó y por qué regla se fusionó (email, teléfono, DNI, nombre confirmado en revisión, o fusión manual).</div>
-    </section>
-
-  </main>
-
-  <!-- STEP 5: PERFILES -->
-  <div class="profiles-overlay hidden" id="profilesPanel">
-    <div class="profiles-layout">
-
-      <!-- Lista lateral -->
-      <div class="profiles-sidebar">
-        <div class="profiles-sidebar-header">
-          <span class="profiles-count" id="profilesCount"></span>
-          <input type="text" id="profileSearch" placeholder="🔎 Buscar persona…" autocomplete="off">
-        </div>
-        <div class="profiles-list" id="profilesList"></div>
-      </div>
-
-      <!-- Ficha de perfil -->
-      <div class="profiles-main" id="profilesMain">
-        <div class="profiles-empty-state" id="profilesEmptyState">
-          <div style="font-size:32px; margin-bottom:12px;">👤</div>
-          <div>Seleccioná una persona de la lista para ver su perfil</div>
-        </div>
-        <div class="profile-card hidden" id="profileCard">
-          <div class="profile-card-header">
-            <div class="profile-avatar" id="profileAvatar"></div>
-            <div class="profile-card-title">
-              <div class="profile-name" id="profileName"></div>
-              <div class="profile-roles" id="profileRoles"></div>
-              <div class="profile-sources" id="profileSources"></div>
-            </div>
-            <div class="profile-status-wrap">
-              <select id="profileStatusSel" class="profile-status-sel">
-                <option value="">Sin estado</option>
-                <option value="ok">✓ Verificado</option>
-                <option value="pendiente">⏳ Pendiente</option>
-                <option value="dudoso">? Dudoso</option>
-              </select>
-            </div>
-          </div>
-
-          <div class="profile-sections">
-
-            <!-- Datos personales -->
-            <div class="profile-section">
-              <div class="profile-section-title">Datos personales</div>
-              <div class="profile-fields" id="profileFields"></div>
-            </div>
-
-            <!-- Vínculos familiares -->
-            <div class="profile-section">
-              <div class="profile-section-title">
-                Vínculos familiares
-                <button class="secondary" id="btnAddLink" style="font-size:10px; padding:3px 8px; margin-left:8px;">+ Agregar</button>
+          <div class="profile-card hidden" id="profileCard">
+            <div class="profile-card-header">
+              <div class="profile-avatar" id="profileAvatar"></div>
+              <div class="profile-card-title">
+                <div class="profile-name" id="profileName"></div>
+                <div class="profile-roles" id="profileRoles"></div>
+                <div class="profile-sources" id="profileSources"></div>
               </div>
-              <div id="profileLinks"></div>
-              <div id="addLinkForm" class="add-link-form hidden"></div>
+              <div class="profile-status-wrap">
+                <select id="profileStatusSel" class="profile-status-sel">
+                  <option value="">Sin estado</option>
+                  <option value="ok">✓ Verificado</option>
+                  <option value="pendiente">⏳ Pendiente</option>
+                  <option value="dudoso">? Dudoso</option>
+                </select>
+              </div>
             </div>
-
-            <!-- Comentario -->
-            <div class="profile-section">
-              <div class="profile-section-title">Comentario</div>
-              <textarea id="profileComment" rows="3" placeholder="Anotaciones sobre esta persona…"></textarea>
-              <button class="secondary" id="btnSaveComment" style="margin-top:6px; font-size:11px;">Guardar comentario</button>
+            <div class="profile-sections">
+              <div class="profile-section">
+                <div class="profile-section-title">Datos personales</div>
+                <div class="profile-fields" id="profileFields"></div>
+              </div>
+              <div class="profile-section">
+                <div class="profile-section-title">
+                  Vínculos familiares
+                  <button class="secondary" id="btnAddLink" style="font-size:10px; padding:3px 8px; margin-left:8px;">+ Agregar</button>
+                </div>
+                <div id="profileLinks"></div>
+                <div id="addLinkForm" class="add-link-form hidden"></div>
+              </div>
+              <div class="profile-section">
+                <div class="profile-section-title">Comentario</div>
+                <textarea id="profileComment" rows="3" placeholder="Anotaciones sobre esta persona…"></textarea>
+                <button class="secondary" id="btnSaveComment" style="margin-top:6px; font-size:11px;">Guardar comentario</button>
+              </div>
             </div>
-
           </div>
         </div>
       </div>
-
     </div>
 
-    <button class="profiles-close" id="profilesClose">✕ Cerrar perfiles</button>
-  </div>
+    <!-- ═══ MODO IMPORTAR (flujo de análisis) ═══ -->
+    <div id="mode-import" class="hidden">
+
+      <!-- Progreso simplificado -->
+      <div class="import-progress">
+        <div class="import-step active" data-istep="1">
+          <div class="import-step-num">1</div>
+          <div class="import-step-label">Cargar archivos</div>
+        </div>
+        <div class="import-step-arrow">→</div>
+        <div class="import-step" data-istep="2">
+          <div class="import-step-num">2</div>
+          <div class="import-step-label">Revisar coincidencias</div>
+        </div>
+        <div class="import-step-arrow">→</div>
+        <div class="import-step" data-istep="3">
+          <div class="import-step-num">3</div>
+          <div class="import-step-label">Confirmar e importar</div>
+        </div>
+      </div>
+
+      <!-- Paso I-1: Cargar -->
+      <section class="panel" id="panel-upload">
+        <h2>Cargar archivos</h2>
+        <div class="desc">Arrastrá tus planillas aquí. Podés subir varios archivos a la vez — cada uno se trata como una fuente distinta y la app busca las personas en común.</div>
+
+        <div class="dropzone" id="dropzone">
+          <div class="icon">⇪</div>
+          <div class="main-txt">Arrastrá tus archivos aquí o hacé click para elegir</div>
+          <div class="sub-txt">Formatos: .xlsx · .xls · .csv · .json</div>
+          <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv,.json">
+        </div>
+
+        <div class="sheets-import">
+          <div class="sheets-import-label">O importar desde Google Sheets</div>
+          <div class="sheets-import-row">
+            <input type="text" id="sheetsUrl" placeholder="Pegá la URL de un Google Sheet público…" autocomplete="off">
+            <input type="text" id="sheetsName" placeholder="Nombre (opcional)" style="max-width:160px;">
+            <button class="secondary" id="btnImportSheets">Importar</button>
+          </div>
+          <div class="small-note" id="sheetsStatus"></div>
+        </div>
+
+        <div class="file-list" id="fileList"></div>
+
+        <div class="actions-row">
+          <button class="secondary" id="btnLoadDemo">Cargar datos de ejemplo</button>
+          <button class="primary hidden" id="btnAutoAnalyze" disabled>⚡ Analizar e importar →</button>
+          <button class="secondary hidden" id="btnGoMatch" disabled>Configurar manualmente →</button>
+          <button class="secondary" id="btnImportProjectTrigger">📂 Abrir proyecto guardado</button>
+          <input type="file" id="projectFileInput" accept=".json" class="hidden">
+        </div>
+        <div class="small-note" id="projectStatus"></div>
+      </section>
+
+      <!-- Paso I-2: Configurar coincidencias (avanzado, oculto por defecto) -->
+      <section class="panel hidden" id="panel-match">
+        <h2>Configurar cómo se identifican duplicados</h2>
+        <div class="desc">La app detecta automáticamente las columnas de cada base. Podés ajustar qué columna corresponde a qué dato si lo detectó mal.</div>
+
+        <div id="matchRules"></div>
+
+        <details class="panel-details">
+          <summary>Ajustes avanzados de coincidencia</summary>
+          <div class="panel-subsection" style="border:none; margin-top:12px;">
+            <div class="settings-row">
+              <div class="filter-group">
+                <label>Sensibilidad nombres similares</label>
+                <select id="fuzzyThresholdInput">
+                  <option value="100">Solo exactos</option>
+                  <option value="95">Muy estricta (95%)</option>
+                  <option value="85" selected>Recomendada (85%)</option>
+                  <option value="75">Permisiva (75%)</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label>Bonus por fecha de nacimiento</label>
+                <select id="birthdateBoostInput">
+                  <option value="0">No usar</option>
+                  <option value="5">+5%</option>
+                  <option value="15" selected>+15%</option>
+                  <option value="25">+25%</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label>Bonus por ciudad</label>
+                <select id="localityBoostInput">
+                  <option value="0">No usar</option>
+                  <option value="5" selected>+5%</option>
+                  <option value="10">+10%</option>
+                  <option value="15">+15%</option>
+                </select>
+              </div>
+              <label class="checkbox-row" style="align-self:flex-end; padding-bottom:7px;">
+                <input type="checkbox" id="chkCombineMultiValue" checked>
+                <span>Combinar emails/teléfonos distintos en vez de marcarlos como conflicto</span>
+              </label>
+            </div>
+          </div>
+        </details>
+
+        <details class="panel-details">
+          <summary>Unificar columnas con distinto nombre</summary>
+          <div class="panel-subsection" style="border:none; margin-top:12px;">
+            <div class="desc">Si dos bases llaman "Teléfono" y "Celular" a lo mismo, escribí el mismo nombre en ambas para combinarlas.</div>
+            <div id="columnUnification"></div>
+          </div>
+        </details>
+
+        <details class="panel-details">
+          <summary>Guardar / cargar configuración</summary>
+          <div class="panel-subsection" style="border:none; margin-top:12px;">
+            <div class="actions-row" style="margin-top:0;">
+              <button class="secondary" id="btnExportConfig">💾 Descargar configuración</button>
+              <button class="secondary" id="btnImportConfigTrigger">📂 Cargar configuración</button>
+              <input type="file" id="configFileInput" accept=".json" class="hidden">
+            </div>
+            <div class="small-note" id="configStatus"></div>
+          </div>
+        </details>
+
+        <div class="actions-row">
+          <button class="secondary" id="btnBackUpload">← Volver</button>
+          <button class="primary" id="btnRunMerge">Buscar duplicados →</button>
+        </div>
+      </section>
+
+      <!-- Paso I-3: Revisión de duplicados -->
+      <section class="panel hidden" id="panel-review">
+        <h2>Revisar posibles duplicados</h2>
+        <div class="desc">Estas personas aparecen en más de una base con nombres parecidos pero sin DNI/email/teléfono en común. Confirmá cuáles son la misma persona para fusionarlas.</div>
+        <div id="analysisPerformanceStat" style="margin-bottom:10px;"></div>
+        <div id="candidatesList"></div>
+        <div class="actions-row">
+          <button class="secondary" id="btnBackReview">← Volver</button>
+          <button class="primary" id="btnContinueToResults">Confirmar e importar perfiles →</button>
+        </div>
+      </section>
+
+      <!-- Paso I-4: Resultado / tabla (oculto, solo para export avanzado) -->
+      <section class="panel hidden" id="panel-results">
+        <h2>Base unificada</h2>
+        <div class="desc">Resultado de la fusión. Podés revisar conflictos, editar celdas y exportar.</div>
+
+        <div class="stats-row" id="statsRow"></div>
+        <div class="analysis-panels" id="analysisPanels"></div>
+
+        <div class="search-bar">
+          <div class="search-input-wrap">
+            <span class="search-icon">🔎</span>
+            <input type="text" id="globalSearch" placeholder="Buscar en todas las columnas..." autocomplete="off">
+            <span class="search-count" id="searchCount"></span>
+            <button class="search-nav" id="searchPrev" title="Anterior">↑</button>
+            <button class="search-nav" id="searchNext" title="Siguiente">↓</button>
+            <button class="search-clear hidden" id="searchClear" title="Limpiar">✕</button>
+          </div>
+        </div>
+
+        <div class="filter-bar" id="filterBar"></div>
+        <div class="filter-options-row">
+          <div class="filter-group">
+            <label>Combinar filtros con</label>
+            <select id="filterCombineMode">
+              <option value="AND">Y (todos)</option>
+              <option value="OR">O (cualquiera)</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>&nbsp;</label>
+            <button class="secondary" id="btnSaveView">💾 Guardar vista</button>
+          </div>
+        </div>
+        <div class="active-filters" id="activeFilters"></div>
+        <div class="saved-views" id="savedViews"></div>
+        <div class="manual-edit-bar" id="manualEditBar"></div>
+        <div class="manual-edit-bar" id="undoRedoBar"></div>
+
+        <div class="table-wrap">
+          <table id="resultTable">
+            <thead><tr id="tableHead"></tr></thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+        <div class="pagination" id="pagination"></div>
+
+        <div class="panel-subsection">
+          <h3>Configurar exportación</h3>
+          <div class="desc">Elegí qué columnas exportar y en qué orden (arrastrá para reordenar).</div>
+          <div id="exportColumnsList" class="export-columns-list"></div>
+          <div class="settings-row" style="margin-top:12px;">
+            <div class="filter-group">
+              <label>Base de referencia (para "exportar solo nuevos")</label>
+              <select id="referenceSourceSelect"><option value="">— ninguna —</option></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="export-row">
+          <button class="primary" id="btnExportCsv">Exportar CSV</button>
+          <button class="primary" id="btnExportXlsx">Exportar Excel</button>
+          <button class="primary" id="btnViewProfiles">👤 Ver perfiles →</button>
+          <button class="secondary" id="btnExportNew">Exportar solo nuevos</button>
+          <button class="secondary" id="btnExportAudit">Exportar auditoría</button>
+          <button class="secondary" id="btnExportProject">💾 Guardar proyecto</button>
+          <button class="secondary" id="btnBackMatch">← Volver</button>
+        </div>
+        <div class="small-note">"Exportar solo nuevos" exporta las personas que NO están en la base de referencia. La auditoría detalla de dónde vino cada registro y por qué se fusionó.</div>
+      </section>
+
+    </div><!-- /mode-import -->
+
+  </main>
 
   <!-- MODAL: Comparación lado a lado -->
   <div class="modal-overlay hidden" id="compareModal">
@@ -1246,18 +1308,71 @@ function checkFormatWarning(value, field){
 /* ============================================================
    STEP NAV
 ============================================================ */
-function showPanel(step){
+/* ============================================================
+   NAVEGACIÓN: dos modos (perfiles / importar)
+============================================================ */
+function switchMode(mode){
+  const isProfiles = mode==='profiles';
+  document.getElementById('mode-profiles').classList.toggle('hidden', !isProfiles);
+  document.getElementById('mode-import').classList.toggle('hidden', isProfiles);
+  document.querySelectorAll('.nav-btn').forEach(b=> b.classList.toggle('active', b.dataset.panel===mode));
+  if(isProfiles) renderProfilesList();
+}
+
+function showImportStep(step){
   document.getElementById('panel-upload').classList.toggle('hidden', step!==1);
   document.getElementById('panel-match').classList.toggle('hidden', step!==2);
   document.getElementById('panel-review').classList.toggle('hidden', step!==3);
   document.getElementById('panel-results').classList.toggle('hidden', step!==4);
-  document.getElementById('profilesPanel').classList.toggle('hidden', step!==5);
-  document.querySelectorAll('.step').forEach(el=>{
-    const s = parseInt(el.dataset.step);
+  document.querySelectorAll('.import-step').forEach(el=>{
+    const s = parseInt(el.dataset.istep);
     el.classList.toggle('active', s===step);
     el.classList.toggle('done', s<step);
   });
-  if(step===5) renderProfilesList();
+}
+
+// Compatibilidad con código que llama showPanel(n)
+function showPanel(step){
+  if(step===5){ switchMode('profiles'); return; }
+  switchMode('import');
+  const importStep = step<=1 ? 1 : step===2 ? 2 : step===3 ? 3 : 4;
+  showImportStep(importStep);
+}
+
+// Nav buttons
+document.getElementById('navProfiles').addEventListener('click', ()=> switchMode('profiles'));
+document.getElementById('navImport').addEventListener('click', ()=>{ switchMode('import'); showImportStep(1); });
+
+/* ============================================================
+   LOCALSTORAGE — perfiles y vínculos persisten entre sesiones
+============================================================ */
+function saveProfilesToStorage(){
+  if(!mergedData.length) return;
+  try{
+    localStorage.setItem('comunidad_mergedData', JSON.stringify(mergedData));
+    localStorage.setItem('comunidad_mergedColumns', JSON.stringify(mergedColumns));
+    localStorage.setItem('comunidad_profileLinks', JSON.stringify(profileLinks));
+    localStorage.setItem('comunidad_profileNotes', JSON.stringify(profileNotes));
+    localStorage.setItem('comunidad_rowComments', JSON.stringify(rowComments));
+    localStorage.setItem('comunidad_rowStatus', JSON.stringify(rowStatus));
+    localStorage.setItem('comunidad_conflictResolutions', JSON.stringify(conflictResolutions));
+    localStorage.setItem('comunidad_sources_names', JSON.stringify(sources.map(s=>s.name)));
+  } catch(e){ console.warn('localStorage lleno o no disponible'); }
+}
+
+function loadProfilesFromStorage(){
+  try{
+    const md = localStorage.getItem('comunidad_mergedData');
+    if(!md) return false;
+    mergedData = JSON.parse(md);
+    mergedColumns = JSON.parse(localStorage.getItem('comunidad_mergedColumns')||'[]');
+    profileLinks = JSON.parse(localStorage.getItem('comunidad_profileLinks')||'{}');
+    profileNotes = JSON.parse(localStorage.getItem('comunidad_profileNotes')||'{}');
+    rowComments = JSON.parse(localStorage.getItem('comunidad_rowComments')||'{}');
+    rowStatus = JSON.parse(localStorage.getItem('comunidad_rowStatus')||'{}');
+    conflictResolutions = JSON.parse(localStorage.getItem('comunidad_conflictResolutions')||'{}');
+    return mergedData.length > 0;
+  } catch(e){ return false; }
 }
 
 /* ============================================================
@@ -1573,24 +1688,21 @@ document.getElementById('btnLoadDemo').addEventListener('click', ()=>{
 document.getElementById('btnGoMatch').addEventListener('click', ()=>{
   buildMatchRules();
   renderColumnUnification();
-  showPanel(2);
+  switchMode('import');
+  showImportStep(2);
 });
 
-// "Analizar todo automáticamente": detecta columnas clave, corre el análisis y la
-// fusión con la configuración recomendada (sin pasar por los pasos 2 y 3 a mano),
-// y va directo al resultado. El usuario puede volver atrás para ajustar si hace falta.
 document.getElementById('btnAutoAnalyze').addEventListener('click', ()=>{
   withLoading('Analizando y fusionando…', ()=>{
     buildMatchRules();
     renderColumnUnification();
     runAnalysis();
-    runMerge();
-    showPanel(4);
+    runMerge(); // runMerge ya llama saveProfilesToStorage() y switchMode('profiles')
   });
 });
-document.getElementById('btnBackUpload').addEventListener('click', ()=> showPanel(1));
-document.getElementById('btnBackMatch').addEventListener('click', ()=> showPanel(3));
-document.getElementById('btnBackReview').addEventListener('click', ()=> showPanel(2));
+document.getElementById('btnBackUpload').addEventListener('click', ()=>{ switchMode('import'); showImportStep(1); });
+document.getElementById('btnBackMatch').addEventListener('click', ()=> showImportStep(3));
+document.getElementById('btnBackReview').addEventListener('click', ()=> showImportStep(2));
 
 function guessColumn(columns, fieldKey){
   const norm = c => normalizeStr(c).replace(/[_\s]/g,'');
@@ -1846,7 +1958,7 @@ function applyConfig(config){
 ============================================================ */
 document.getElementById('btnRunMerge').addEventListener('click', ()=>{
   runAnalysis();
-  showPanel(3);
+  showImportStep(3);
 });
 
 function runAnalysis(){
@@ -2114,8 +2226,7 @@ function renderCandidateFields(row){
    PASO 3 → 4: FUSIÓN FINAL
 ============================================================ */
 document.getElementById('btnContinueToResults').addEventListener('click', ()=>{
-  runMerge();
-  showPanel(4);
+  runMerge(); // runMerge llama saveProfilesToStorage() y switchMode('profiles')
 });
 
 function runMerge(){
@@ -2184,6 +2295,8 @@ function runMerge(){
   mergedColumns.forEach(c=> exportColumnEnabled[c]=true);
   rebuildMergedData();
   renderResults();
+  saveProfilesToStorage();
+  switchMode('profiles');
 }
 
 function normalizeForCompare(v, type, norm){
@@ -3833,8 +3946,7 @@ function openAddLinkForm(id){
 }
 
 // ── Wiring ────────────────────────────────────────────────────
-document.getElementById('btnViewProfiles').addEventListener('click', ()=> showPanel(5));
-document.getElementById('profilesClose').addEventListener('click', ()=> showPanel(4));
+document.getElementById('btnViewProfiles').addEventListener('click', ()=> switchMode('profiles'));
 
 document.getElementById('profileSearch').addEventListener('input', e=>{
   profileSearchTerm = e.target.value;
@@ -3986,6 +4098,20 @@ function downloadBlob(content, filename, type){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+/* ============================================================
+   INICIO: cargar perfiles guardados o mostrar pantalla de importación
+============================================================ */
+(function init(){
+  const hasData = loadProfilesFromStorage();
+  if(hasData){
+    switchMode('profiles');
+  } else {
+    // Primera vez o sin datos: mostrar importación
+    switchMode('import');
+    showImportStep(1);
+  }
+})();
 
 </script>
 </body>
