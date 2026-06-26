@@ -497,7 +497,24 @@
   }
 
   /* Close button */
-  .profiles-export-bar{
+  .profiles-filters{
+    padding:10px 14px; border-bottom:1px solid var(--border); display:flex; flex-direction:column; gap:6px;
+  }
+  .profiles-filter-row{ display:flex; gap:6px; align-items:center; }
+  .profiles-filter-row label{ font-family:var(--mono); font-size:10px; color:var(--text-dim); min-width:50px; }
+  .profiles-filter-row select{ flex:1; font-size:12px; padding:4px 6px; }
+  .profiles-filter-chips{ display:flex; flex-wrap:wrap; gap:4px; margin-top:2px; }
+  .profiles-filter-chip{
+    font-family:var(--mono); font-size:10px; padding:3px 8px;
+    border-radius:3px; border:1px solid var(--accent); color:var(--accent);
+    background:rgba(47,107,82,0.08); cursor:pointer; display:flex; align-items:center; gap:4px;
+  }
+  .profiles-filter-chip.active{ background:var(--accent); color:var(--panel); }
+  .profiles-clear-filters{
+    font-family:var(--mono); font-size:10px; color:var(--text-dim);
+    background:none; border:none; cursor:pointer; text-align:left; padding:2px 0;
+  }
+  .profiles-clear-filters:hover{ color:var(--conflict); }
     padding:10px 14px; border-bottom:1px solid var(--border);
     display:flex; flex-direction:column; gap:6px;
   }
@@ -733,6 +750,7 @@
             <input type="text" id="profileSearch" placeholder="🔎 Buscar persona…" autocomplete="off">
             <button class="primary" id="btnNewProfile" style="width:100%; margin-top:6px; font-size:11px; padding:8px;">+ Nuevo perfil manual</button>
           </div>
+          <div class="profiles-filters" id="profilesFilters"></div>
           <div class="profiles-export-bar" id="profilesExportBar"></div>
           <div class="profiles-list" id="profilesList"></div>
         </div>
@@ -3770,6 +3788,93 @@ function initProfileLinks(){
 
 // ── Render de la lista lateral ──────────────────────────────
 let profileSearchTerm = '';
+let profileFilters = { rol: '', fuente: '', estado: '', nivel: '' };
+
+function renderProfilesFilters(){
+  const el = document.getElementById('profilesFilters');
+  if(!el || !mergedData.length){ if(el) el.innerHTML=''; return; }
+
+  // Obtener valores únicos para cada filtro
+  const roles = [...new Set(mergedData.flatMap(r=> detectRoles(r)))].sort();
+  const fuentes = [...new Set(mergedData.flatMap(r=> r.__sources||[]))].sort();
+  const estados = ['ok','pendiente','dudoso'];
+  const niveles = [...new Set(mergedData.map(r=> getResolvedValue(r,'Nivel')).filter(Boolean))].sort();
+
+  const anyActive = Object.values(profileFilters).some(Boolean);
+
+  el.innerHTML = `
+    <div class="profiles-filter-row">
+      <label>Rol</label>
+      <select id="pfRol">
+        <option value="">Todos</option>
+        ${roles.map(r=>`<option value="${escAttr(r)}" ${profileFilters.rol===r?'selected':''}>${escHtml(r)}</option>`).join('')}
+      </select>
+    </div>
+    ${niveles.length > 1 ? `
+    <div class="profiles-filter-row">
+      <label>Nivel</label>
+      <select id="pfNivel">
+        <option value="">Todos</option>
+        ${niveles.map(n=>`<option value="${escAttr(n)}" ${profileFilters.nivel===n?'selected':''}>${escHtml(n)}</option>`).join('')}
+      </select>
+    </div>` : ''}
+    <div class="profiles-filter-row">
+      <label>Base</label>
+      <select id="pfFuente">
+        <option value="">Todas</option>
+        ${fuentes.map(f=>`<option value="${escAttr(f)}" ${profileFilters.fuente===f?'selected':''}>${escHtml(f.replace(/\.[a-z]+$/i,'').slice(0,22))}</option>`).join('')}
+      </select>
+    </div>
+    <div class="profiles-filter-row">
+      <label>Estado</label>
+      <select id="pfEstado">
+        <option value="">Todos</option>
+        <option value="ok" ${profileFilters.estado==='ok'?'selected':''}>✓ Verificado</option>
+        <option value="pendiente" ${profileFilters.estado==='pendiente'?'selected':''}>⏳ Pendiente</option>
+        <option value="dudoso" ${profileFilters.estado==='dudoso'?'selected':''}>? Dudoso</option>
+        <option value="" data-noestado="1" ${!profileFilters.estado?'':''}>Sin estado</option>
+      </select>
+    </div>
+    ${anyActive ? `<button class="profiles-clear-filters" id="btnClearProfileFilters">✕ Limpiar filtros</button>` : ''}
+  `;
+
+  ['pfRol','pfNivel','pfFuente','pfEstado'].forEach(id=>{
+    const el2 = document.getElementById(id);
+    if(!el2) return;
+    el2.addEventListener('change', ()=>{
+      if(id==='pfRol') profileFilters.rol = el2.value;
+      if(id==='pfNivel') profileFilters.nivel = el2.value;
+      if(id==='pfFuente') profileFilters.fuente = el2.value;
+      if(id==='pfEstado') profileFilters.estado = el2.value;
+      renderProfilesList();
+    });
+  });
+  const clearBtn = document.getElementById('btnClearProfileFilters');
+  if(clearBtn) clearBtn.addEventListener('click', ()=>{
+    profileFilters = { rol:'', fuente:'', estado:'', nivel:'' };
+    renderProfilesList();
+  });
+}
+
+function applyProfileFilters(data){
+  return data.filter(row=>{
+    if(profileFilters.rol){
+      if(!detectRoles(row).includes(profileFilters.rol)) return false;
+    }
+    if(profileFilters.fuente){
+      if(!(row.__sources||[]).includes(profileFilters.fuente)) return false;
+    }
+    if(profileFilters.estado){
+      if((rowStatus[row.__id]||'') !== profileFilters.estado) return false;
+    }
+    if(profileFilters.nivel){
+      if(getResolvedValue(row,'Nivel') !== profileFilters.nivel) return false;
+    }
+    return true;
+  });
+}
+
+
 
 function renderProfilesExportBar(){
   const bar = document.getElementById('profilesExportBar');
@@ -3816,33 +3921,37 @@ function renderProfilesExportBar(){
 function renderProfilesList(){
   initProfileLinks();
   renderProfilesExportBar();
+  renderProfilesFilters();
   const countEl = document.getElementById('profilesCount');
   const listEl  = document.getElementById('profilesList');
   if(!mergedData.length){
-    countEl.textContent = 'Sin datos';
-    listEl.innerHTML = '<div class="small-note" style="padding:16px;">Procesá las bases primero (pasos 1-4) para ver los perfiles.</div>';
+    countEl.textContent = 'Sin perfiles';
+    listEl.innerHTML = '<div class="small-note" style="padding:16px;">Importá una base para generar perfiles.</div>';
     return;
   }
 
   const term = normalizeStr(profileSearchTerm);
-  const filtered = term
-    ? mergedData.filter(r=> normalizeStr(getPersonDisplayName(r)).includes(term))
-    : mergedData;
+  let filtered = applyProfileFilters(mergedData);
+  if(term) filtered = filtered.filter(r=> normalizeStr(getPersonDisplayName(r)).includes(term));
 
-  countEl.textContent = `${filtered.length} de ${mergedData.length} personas`;
+  const total = mergedData.length;
+  const showing = filtered.length;
+  countEl.textContent = showing === total ? `${total} personas` : `${showing} de ${total}`;
 
   listEl.innerHTML = filtered.map(row=>{
     const name = getPersonDisplayName(row);
     const initials = getInitials(name);
     const color = getSourceColor(name);
     const roles = detectRoles(row);
-    const sources = (row.__sources||[]).map(s=> s.replace(/\.[a-z]+$/i,'').slice(0,18)).join(' · ');
+    const nivel = getResolvedValue(row,'Nivel') || getResolvedValue(row,'Grado/Sala') || '';
+    const meta = [roles.join(' · '), nivel].filter(Boolean).join(' · ');
     const isActive = row.__id === activeProfileId;
+    const statusDot = rowStatus[row.__id] ? `<span style="width:6px;height:6px;border-radius:50%;background:${rowStatus[row.__id]==='ok'?'var(--match)':rowStatus[row.__id]==='pendiente'?'var(--accent-2)':'var(--conflict)'};display:inline-block;margin-left:4px;"></span>` : '';
     return `<div class="profile-list-item ${isActive?'active':''}" data-id="${row.__id}">
       <div class="profile-list-avatar" style="background:${color};">${initials}</div>
       <div class="profile-list-info">
-        <div class="profile-list-name">${escHtml(name)}</div>
-        <div class="profile-list-meta">${roles.join(' · ')} · ${escHtml(sources)}</div>
+        <div class="profile-list-name">${escHtml(name)}${statusDot}</div>
+        <div class="profile-list-meta">${escHtml(meta)}</div>
       </div>
     </div>`;
   }).join('');
@@ -3850,12 +3959,13 @@ function renderProfilesList(){
   listEl.querySelectorAll('.profile-list-item').forEach(el=>{
     el.addEventListener('click', ()=>{
       activeProfileId = parseInt(el.dataset.id, 10);
-      renderProfilesList();
+      listEl.querySelectorAll('.profile-list-item').forEach(e=>e.classList.remove('active'));
+      el.classList.add('active');
       renderProfileCard(activeProfileId);
     });
   });
 
-  if(activeProfileId) renderProfileCard(activeProfileId);
+  if(activeProfileId && mergedData.find(r=>r.__id===activeProfileId)) renderProfileCard(activeProfileId);
 }
 
 // ── Render de la ficha de perfil ────────────────────────────
@@ -3926,12 +4036,18 @@ function renderProfileCard(id){
   if(fieldCols.length===0){
     fieldsEl.innerHTML = '<div class="profile-field-empty" style="grid-column:1/-1">Sin datos registrados.</div>';
   } else {
+    const DOB_COL = /fecha.*nac|nac.*fecha|birthday|birth.*date|fecnac/i;
     fieldsEl.innerHTML = fieldCols.map(col=>{
       const val = getResolvedValue(row, col);
       const label = FIELD_LABELS[col] || col;
+      let extra = '';
+      if(DOB_COL.test(col)){
+        const age = calcAge(String(val));
+        if(age !== null) extra = `<span style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-left:6px;">${age} años</span>`;
+      }
       return `<div class="profile-field">
         <div class="profile-field-label">${escHtml(label)}</div>
-        <div class="profile-field-value">${escHtml(String(val))}</div>
+        <div class="profile-field-value">${escHtml(String(val))}${extra}</div>
       </div>`;
     }).join('');
   }
@@ -3954,64 +4070,112 @@ function renderProfileCard(id){
   document.getElementById('btnAddLink').onclick = ()=> openAddLinkForm(id);
 }
 
+function calcAge(fechaStr){
+  if(!fechaStr) return null;
+  // try parsing various formats
+  const s = String(fechaStr).trim();
+  let d = new Date(s);
+  if(isNaN(d.getTime())){
+    // try dd/mm/yyyy
+    const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+    if(m) d = new Date(`${m[3].length===2?'20'+m[3]:m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+  }
+  if(isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const mDiff = now.getMonth() - d.getMonth();
+  if(mDiff < 0 || (mDiff===0 && now.getDate() < d.getDate())) age--;
+  return age >= 0 && age < 120 ? age : null;
+}
+
+// Detectar el tipo de familiar al que pertenece una columna (madre vs padre vs familiar)
+// usando el patrón más específico — evita que "N° celular de la madre" matchee con "padre"
+function getFamilyType(colName){
+  // orden importa: patrones más específicos primero
+  const specific = [
+    { re: /madre|mom|mother|mamá/i,              type: 'madre' },
+    { re: /padre|papá|father|dad/i,              type: 'padre' },
+    { re: /tutor/i,                              type: 'tutor' },
+    { re: /apoderado/i,                          type: 'apoderado' },
+    { re: /encargado/i,                          type: 'encargado' },
+    { re: /c[oó]nyuge|esposa|esposo|pareja/i,   type: 'cónyuge' },
+    { re: /hermano/i,                            type: 'hermano/a' },
+    { re: /hijo|hija/i,                          type: 'hijo/a' },
+    { re: /familiar|emergencia/i,               type: 'familiar' },
+    { re: /progenitor/i,                         type: 'progenitor' },
+  ];
+  for(const p of specific){ if(p.re.test(colName)) return p.type; }
+  return null;
+}
+
 function renderProfileLinks(id, row){
   const linksEl = document.getElementById('profileLinks');
-  const links = profileLinks[id]||[];
 
-  // También mostrar datos de contacto de familiares que están en columnas pero no son perfiles
-  // (ej: "N° de Celular de la madre" y "Mail de la madre" acompañan a "Apellido y nombre de la madre")
-  const rawFamilyData = []; // {type, name, phone, email}
+  // ── 1. Agrupar columnas de familiares por tipo ─────────────────────────────
+  // Para cada tipo (madre, padre…) buscar: nombre, teléfono, email
+  const familyGroups = {}; // type → {name, phone, email, targetId}
   mergedColumns.forEach(col=>{
-    const pattern = FAMILY_COL_PATTERNS.find(p=>p.re.test(col) && p.type !== 'contacto');
-    if(!pattern) return;
+    const type = getFamilyType(col);
+    if(!type) return;
     const val = getResolvedValue(row, col);
     if(isEmpty(val)) return;
-    // solo columnas de nombre (no de tel/mail — esos se buscan como complemento)
-    if(/celular|tel[eé]|mail|email|correo/i.test(col)) return;
-    // buscar datos de contacto asociados (buscar otras columnas que mencionan el mismo familiar)
-    let phone='', email='';
-    mergedColumns.forEach(c2=>{
-      if(c2===col) return;
-      const isSameFam = FAMILY_COL_PATTERNS.some(p=> p.re.test(col) && p.re.test(c2));
-      if(!isSameFam) return;
-      const v2 = getResolvedValue(row, c2);
-      if(isEmpty(v2)) return;
-      if(/celular|tel[eé]/i.test(c2)) phone = String(v2);
-      if(/mail|email|correo/i.test(c2)) email = String(v2);
-    });
-    rawFamilyData.push({type: pattern.type, name: String(val), phone, email, fromColumn: col});
+    if(!familyGroups[type]) familyGroups[type] = {name:'', phone:'', email:'', targetId:null};
+    const g = familyGroups[type];
+    if(/celular|tel[eé]/i.test(col)) g.phone = g.phone || String(val);
+    else if(/mail|email|correo/i.test(col)) g.email = g.email || String(val);
+    else if(!g.name) g.name = String(val); // primera columna sin tel/mail = nombre
   });
 
-  const allLinks = [...links];
+  // ── 2. Para cada familiar con nombre, intentar encontrar su perfil en la base ──
+  Object.values(familyGroups).forEach(g=>{
+    if(!g.name) return;
+    const normName = normalizeStr(g.name);
+    const match = mergedData.find(r=>
+      r.__id !== id && nameSimilarity(normalizeStr(getPersonDisplayName(r)), normName) > 0.82
+    );
+    if(match) g.targetId = match.__id;
+  });
 
-  if(allLinks.length===0 && rawFamilyData.length===0){
+  // ── 3. Vínculos manuales ───────────────────────────────────────────────────
+  const manualLinks = (profileLinks[id]||[]).filter(lk=> !lk.auto);
+
+  // ── 4. Render ──────────────────────────────────────────────────────────────
+  const hasFamily = Object.keys(familyGroups).length > 0;
+  const hasManual = manualLinks.length > 0;
+
+  if(!hasFamily && !hasManual){
     linksEl.innerHTML = '<div class="profile-no-links">No se detectaron vínculos familiares. Usá "+ Agregar" para vincular manualmente.</div>';
     return;
   }
 
-  const rawHtml = rawFamilyData.map(f=>`
-    <div class="profile-link-row">
-      <span class="profile-link-type">${escHtml(f.type)}</span>
-      <div style="flex:1; min-width:0;">
-        <div style="font-size:13px; font-weight:600;">${escHtml(f.name)}</div>
-        ${f.phone ? `<div style="font-size:11px; color:var(--text-dim); font-family:var(--mono);">📞 ${escHtml(f.phone)}</div>` : ''}
-        ${f.email ? `<div style="font-size:11px; color:var(--text-dim); font-family:var(--mono);">✉ ${escHtml(f.email)}</div>` : ''}
-      </div>
-    </div>`).join('');
+  const familyHtml = Object.entries(familyGroups)
+    .filter(([,g])=> g.name || g.phone || g.email)
+    .map(([type, g])=>{
+      const nameHtml = g.targetId
+        ? `<span class="profile-link-name" data-target="${g.targetId}" style="cursor:pointer; color:var(--accent); text-decoration:underline dotted;">${escHtml(g.name)} ↗</span>`
+        : `<span style="font-size:13px; font-weight:600;">${escHtml(g.name||'Sin nombre')}</span>`;
+      return `<div class="profile-link-row">
+        <span class="profile-link-type">${escHtml(type)}</span>
+        <div style="flex:1; min-width:0;">
+          ${nameHtml}
+          ${g.phone ? `<div style="font-size:11px; color:var(--text-dim); font-family:var(--mono); margin-top:2px;">📞 ${escHtml(g.phone)}</div>` : ''}
+          ${g.email ? `<div style="font-size:11px; color:var(--text-dim); font-family:var(--mono);">✉ ${escHtml(g.email)}</div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
 
-  const manualHtml = allLinks.map((lk,idx)=>{
-    const badge = lk.auto ? '' : '<span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-left:4px;">(manual)</span>';
+  const manualHtml = manualLinks.map((lk,idx)=>{
     const nameHtml = lk.targetId
-      ? `<span class="profile-link-name" data-target="${lk.targetId}">${escHtml(lk.targetName)}</span>`
-      : `<span class="profile-link-name" style="cursor:default;">${escHtml(lk.targetName)}</span>`;
+      ? `<span class="profile-link-name" data-target="${lk.targetId}" style="cursor:pointer; color:var(--accent); text-decoration:underline dotted;">${escHtml(lk.targetName)} ↗</span>`
+      : `<span style="font-size:13px; font-weight:600;">${escHtml(lk.targetName)}</span>`;
     return `<div class="profile-link-row" data-idx="${idx}">
       <span class="profile-link-type">${escHtml(lk.type)}</span>
-      ${nameHtml}${badge}
-      <button class="profile-link-del" data-idx="${idx}" title="Quitar vínculo">✕</button>
+      <div style="flex:1;">${nameHtml}</div>
+      <button class="profile-link-del" data-idx="${idx}" title="Quitar">✕</button>
     </div>`;
   }).join('');
 
-  linksEl.innerHTML = `<div class="profile-links-list">${rawHtml}${manualHtml}</div>`;
+  linksEl.innerHTML = `<div class="profile-links-list">${familyHtml}${manualHtml}</div>`;
 
   // Navegar al perfil vinculado al hacer click en el nombre
   linksEl.querySelectorAll('.profile-link-name[data-target]').forEach(el=>{
