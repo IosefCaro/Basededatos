@@ -1311,36 +1311,26 @@ async function handleFiles(files){
         rows = Array.isArray(json) ? json : (json.data || json.rows || Object.values(json));
       } else if(ext==='xlsx' || ext==='xls'){
         const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, {type:'array'});
+        const wb = XLSX.read(buf, {type:'array', raw:false});
         // Importar todas las hojas con datos como fuentes separadas
         const sheetsWithData = wb.SheetNames
-          .map(name=>({ name, rows: XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:null}) }))
+          .map(name=>({ name, rows: parseSheetRows(wb.Sheets[name]) }))
           .filter(s=> s.rows.length>0);
         if(sheetsWithData.length===0){
           alert(`"${file.name}" no tiene hojas con datos.`);
           continue;
         }
         sheetsWithData.forEach(s=>{
-          const rows = s.rows.map(r=>{
-            const obj={};
-            for(const k in r) obj[String(k).trim()] = r[k];
-            return obj;
-          });
-          const columns = uniq(rows.flatMap(r=>Object.keys(r)));
-          // si el archivo tiene una sola hoja con datos, no hace falta aclarar el nombre
+          const columns = uniq(s.rows.flatMap(r=>Object.keys(r)));
           const sourceName = sheetsWithData.length>1 ? `${file.name} — ${s.name}` : file.name;
-          sources.push({ name: sourceName, ext, rows, columns });
+          sources.push({ name: sourceName, ext, rows: s.rows, columns });
         });
         continue;
       } else {
         alert(`Formato no soportado: ${file.name}`);
         continue;
       }
-      rows = rows.map(r=>{
-        const obj={};
-        for(const k in r) obj[String(k).trim()] = r[k];
-        return obj;
-      });
+      rows = cleanRows(rows);
       const columns = uniq(rows.flatMap(r=>Object.keys(r)));
       sources.push({ name:file.name, ext, rows, columns });
     } catch(err){
@@ -1349,6 +1339,69 @@ async function handleFiles(files){
   }
   renderFileList();
   hideLoading();
+}
+
+// Convierte una hoja de XLSX a filas limpias:
+// - Salta filas vacías al principio hasta encontrar los encabezados reales
+// - Elimina columnas sin nombre o con nombres genéricos (__EMPTY, Columna N, Col N)
+// - Elimina filas completamente vacías
+// - Recorta espacios en nombres de columna y valores
+function parseSheetRows(ws){
+  const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:false});
+
+  // Encontrar la primera fila que tenga al menos 2 celdas no vacías (encabezados reales)
+  let headerIdx = -1;
+  for(let i=0; i<Math.min(raw.length, 10); i++){
+    const nonEmpty = raw[i].filter(v=> v!==null && String(v).trim()!=='');
+    if(nonEmpty.length >= 2){ headerIdx = i; break; }
+  }
+  if(headerIdx === -1) return [];
+
+  const rawHeaders = raw[headerIdx];
+
+  // Identificar columnas válidas: nombre no vacío y no genérico
+  const BAD_COL = /^(__EMPTY|Columna\s*\d+|Col\s*\d+|_col\d+|Sheet\d*|Hoja\d*)$/i;
+  const validCols = rawHeaders
+    .map((h, idx)=>({ idx, name: h!=null ? String(h).trim() : '' }))
+    .filter(c=> c.name && !BAD_COL.test(c.name));
+
+  if(validCols.length === 0) return [];
+
+  // Construir filas de datos
+  const rows = [];
+  for(let i=headerIdx+1; i<raw.length; i++){
+    const rawRow = raw[i];
+    // Saltar filas completamente vacías
+    if(!rawRow || rawRow.every(v=> v===null || String(v).trim()==='')) continue;
+    const obj = {};
+    validCols.forEach(c=>{
+      const v = rawRow[c.idx];
+      const vs = v!=null ? String(v).trim() : null;
+      obj[c.name] = (vs && vs!=='null' && vs!=='undefined') ? vs : null;
+    });
+    // Solo incluir filas que tengan al menos un campo con dato
+    if(Object.values(obj).some(v=> v!==null)) rows.push(obj);
+  }
+  return rows;
+}
+
+// Limpia filas de CSV/JSON: elimina columnas sin nombre, recorta valores, elimina vacías
+function cleanRows(rows){
+  if(!rows.length) return rows;
+  const BAD_COL = /^(__EMPTY|Columna\s*\d+|Col\s*\d+|_col\d+|^\s*$)/i;
+  return rows
+    .map(r=>{
+      const obj={};
+      for(const k in r){
+        const key = String(k).trim();
+        if(!key || BAD_COL.test(key)) continue;
+        const v = r[k];
+        const vs = v!=null ? String(v).trim() : null;
+        obj[key] = (vs && vs!=='null' && vs!=='undefined') ? vs : null;
+      }
+      return obj;
+    })
+    .filter(r=> Object.values(r).some(v=> v!==null));
 }
 
 /* ============================================================
@@ -1399,8 +1452,8 @@ async function importGoogleSheet(){
     const res = await fetch(csvUrl);
     if(!res.ok) throw new Error(`Error ${res.status} — ¿el Sheet es público?`);
     const text = await res.text();
-    const rows = parseCSV(text);
-    if(rows.length===0) throw new Error('El sheet parece estar vacío.');
+    const rows = cleanRows(parseCSV(text));
+    if(rows.length===0) throw new Error('El sheet parece estar vacío o no tiene columnas con nombre.');
     const columns = uniq(rows.flatMap(r=>Object.keys(r)));
     const name = nameInput || `Google Sheet (gid ${gid})`;
     sources.push({ name, ext:'csv', rows, columns });
@@ -1457,7 +1510,7 @@ function renderFileList(){
         <span class="ext">${s.ext}</span>
         <div>
           <div class="name">${s.name}</div>
-          <div class="meta">${s.rows.length} filas · ${s.columns.length} columnas</div>
+          <div class="meta">${s.rows.length} filas · ${s.columns.length} columnas: ${s.columns.slice(0,5).join(', ')}${s.columns.length>5?' …':''}</div>
         </div>
       </div>
       <button class="remove" data-idx="${idx}" title="Quitar">✕</button>
