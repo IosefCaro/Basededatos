@@ -534,7 +534,67 @@
   }
   .profiles-close:hover{ background: var(--conflict); }
 
-  /* Modal comparación lado a lado */
+  /* Timeline */
+  .timeline-list{ display:flex; flex-direction:column; gap:0; }
+  .timeline-item{
+    display:flex; gap:12px; padding:8px 0;
+    border-left:2px solid var(--border); margin-left:8px; padding-left:16px; position:relative;
+  }
+  .timeline-item::before{
+    content:''; position:absolute; left:-5px; top:12px;
+    width:8px; height:8px; border-radius:50%; background:var(--border); border:2px solid var(--panel);
+  }
+  .timeline-item.event::before{ background:var(--accent-2); }
+  .timeline-item.import::before{ background:var(--match); }
+  .timeline-item.link::before{ background:var(--accent); }
+  .timeline-item.group::before{ background:#7b4d8e; }
+  .timeline-item.comment::before{ background:var(--text-dim); }
+  .timeline-date{ font-family:var(--mono); font-size:10px; color:var(--text-dim); min-width:75px; flex-shrink:0; margin-top:1px; }
+  .timeline-content{ flex:1; font-size:12.5px; }
+  .timeline-action{ font-weight:600; font-size:11px; text-transform:uppercase; font-family:var(--mono); letter-spacing:0.04em; }
+  .timeline-detail{ color:var(--text-dim); margin-top:2px; }
+
+  /* Events */
+  .event-list{ display:flex; flex-direction:column; gap:8px; }
+  .event-row{
+    display:flex; align-items:flex-start; gap:10px;
+    padding:10px 12px; border:1px solid var(--border); border-radius:4px;
+    background:var(--panel-2); position:relative;
+  }
+  .event-icon{ font-size:18px; flex-shrink:0; margin-top:1px; }
+  .event-body{ flex:1; min-width:0; }
+  .event-type{ font-family:var(--mono); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:var(--accent-2); }
+  .event-date{ font-family:var(--mono); font-size:11px; color:var(--text-dim); }
+  .event-desc{ font-size:13px; margin-top:3px; }
+  .event-related{ font-size:11px; color:var(--accent); cursor:pointer; margin-top:2px; }
+  .event-related:hover{ text-decoration:underline; }
+  .event-del{ position:absolute; top:8px; right:8px; background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:13px; }
+  .event-del:hover{ color:var(--conflict); }
+
+  /* Groups */
+  .group-list{ display:flex; flex-direction:column; gap:8px; }
+  .group-row{
+    display:flex; align-items:center; gap:10px;
+    padding:8px 12px; border:1px solid var(--border); border-radius:4px; background:var(--panel-2);
+  }
+  .group-name{ flex:1; font-size:13px; font-weight:600; }
+  .group-role{ font-size:11px; color:var(--text-dim); font-family:var(--mono); }
+  .group-dates{ font-size:11px; color:var(--text-dim); font-family:var(--mono); }
+  .group-del{ background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:13px; }
+  .group-del:hover{ color:var(--conflict); }
+  .group-badge{
+    font-family:var(--mono); font-size:9px; font-weight:700; padding:2px 6px;
+    border-radius:3px; background:rgba(123,77,142,0.12); color:#7b4d8e; border:1px solid #7b4d8e;
+  }
+
+  /* Alerts banner */
+  .alerts-banner{
+    padding:10px 14px; background:rgba(173,122,53,0.10);
+    border-bottom:1px solid var(--accent-2); display:flex; flex-direction:column; gap:4px;
+  }
+  .alert-item{ font-size:12px; display:flex; align-items:center; gap:6px; cursor:pointer; }
+  .alert-item:hover .alert-name{ text-decoration:underline; color:var(--accent); }
+  .alert-icon{ flex-shrink:0; }
   .modal-overlay{
     position:fixed; inset:0; z-index:800; background:rgba(43,40,32,0.45);
     display:flex; align-items:center; justify-content:center; padding:20px;
@@ -792,6 +852,26 @@
                 </div>
                 <div id="profileLinks"></div>
                 <div id="addLinkForm" class="add-link-form hidden"></div>
+              </div>
+              <div class="profile-section">
+                <div class="profile-section-title">
+                  Eventos de vida
+                  <button class="secondary" id="btnAddEvent" style="font-size:10px; padding:3px 8px; margin-left:8px;">+ Registrar evento</button>
+                </div>
+                <div id="profileEvents"></div>
+                <div id="addEventForm" class="add-link-form hidden"></div>
+              </div>
+              <div class="profile-section">
+                <div class="profile-section-title">
+                  Grupos y membresías
+                  <button class="secondary" id="btnAddGroup" style="font-size:10px; padding:3px 8px; margin-left:8px;">+ Agregar grupo</button>
+                </div>
+                <div id="profileGroups"></div>
+                <div id="addGroupForm" class="add-link-form hidden"></div>
+              </div>
+              <div class="profile-section">
+                <div class="profile-section-title">Historial de cambios</div>
+                <div id="profileTimeline"></div>
               </div>
               <div class="profile-section">
                 <div class="profile-section-title">Comentario</div>
@@ -1065,8 +1145,11 @@ let lastAnalysisStats = null; // estadísticas del último análisis (para mostr
 
 // ── Perfiles ──────────────────────────────────────────────────────────────────
 let profileLinks = {}; // {__id: [{type, targetId, targetName}]}
-let profileNotes = {}; // {__id: string} (notas libres, separado de rowComments)
-let activeProfileId = null; // __id del perfil actualmente abierto
+let profileNotes = {}; // {__id: string}
+let profileEvents = {}; // {__id: [{type, date, desc, relatedId, relatedName}]}
+let profileGroups = {}; // {__id: [{name, role, since, until}]}
+let profileTimeline = {}; // {__id: [{ts, action, detail}]}
+let activeProfileId = null;
 
 let mergedClusters = []; // array de arrays de filas crudas {data, sourceIdx, sourceName}, una por persona del resultado
 let mergedColInfo = {}; // columna normalizada -> {type, field} (para combinar/comparar valores)
@@ -1382,6 +1465,9 @@ function saveProfilesToStorage(){
     localStorage.setItem('comunidad_mergedColumns', JSON.stringify(mergedColumns));
     localStorage.setItem('comunidad_profileLinks', JSON.stringify(profileLinks));
     localStorage.setItem('comunidad_profileNotes', JSON.stringify(profileNotes));
+    localStorage.setItem('comunidad_profileEvents', JSON.stringify(profileEvents));
+    localStorage.setItem('comunidad_profileGroups', JSON.stringify(profileGroups));
+    localStorage.setItem('comunidad_profileTimeline', JSON.stringify(profileTimeline));
     localStorage.setItem('comunidad_rowComments', JSON.stringify(rowComments));
     localStorage.setItem('comunidad_rowStatus', JSON.stringify(rowStatus));
     localStorage.setItem('comunidad_conflictResolutions', JSON.stringify(conflictResolutions));
@@ -1397,6 +1483,9 @@ function loadProfilesFromStorage(){
     mergedColumns = JSON.parse(localStorage.getItem('comunidad_mergedColumns')||'[]');
     profileLinks = JSON.parse(localStorage.getItem('comunidad_profileLinks')||'{}');
     profileNotes = JSON.parse(localStorage.getItem('comunidad_profileNotes')||'{}');
+    profileEvents = JSON.parse(localStorage.getItem('comunidad_profileEvents')||'{}');
+    profileGroups = JSON.parse(localStorage.getItem('comunidad_profileGroups')||'{}');
+    profileTimeline = JSON.parse(localStorage.getItem('comunidad_profileTimeline')||'{}');
     rowComments = JSON.parse(localStorage.getItem('comunidad_rowComments')||'{}');
     rowStatus = JSON.parse(localStorage.getItem('comunidad_rowStatus')||'{}');
     conflictResolutions = JSON.parse(localStorage.getItem('comunidad_conflictResolutions')||'{}');
@@ -2319,6 +2408,7 @@ function runMerge(){
   editHistory = []; editFuture = []; cellEdits = {};
   rowComments = {}; rowStatus = {};
   profileLinks = {}; profileNotes = {}; activeProfileId = null;
+  profileEvents = {}; profileGroups = {}; profileTimeline = {};
   exportColumns = [...mergedColumns];
   exportColumnEnabled = {};
   mergedColumns.forEach(c=> exportColumnEnabled[c]=true);
@@ -3920,7 +4010,10 @@ function renderProfilesExportBar(){
 
 function renderProfilesList(){
   initProfileLinks();
+  // Limpiar alertas anteriores antes de rerenderizar
+  document.querySelectorAll('.alerts-banner').forEach(el=>el.remove());
   renderProfilesExportBar();
+  renderAlertsBar();
   renderProfilesFilters();
   const countEl = document.getElementById('profilesCount');
   const listEl  = document.getElementById('profilesList');
@@ -4019,7 +4112,14 @@ function renderProfileCard(id){
   // Estado
   const statusSel = document.getElementById('profileStatusSel');
   statusSel.value = rowStatus[id]||'';
-  statusSel.onchange = ()=>{ rowStatus[id] = statusSel.value||undefined; if(!statusSel.value) delete rowStatus[id]; };
+  statusSel.onchange = ()=>{
+    const prev = rowStatus[id]||'sin estado';
+    rowStatus[id] = statusSel.value||undefined;
+    if(!statusSel.value) delete rowStatus[id];
+    const labels = {ok:'Verificado', pendiente:'Pendiente', dudoso:'Dudoso'};
+    addTimelineEntry(id,'comment','Estado actualizado', labels[statusSel.value]||'Sin estado');
+    saveProfilesToStorage();
+  };
 
   // Campos de datos personales — excluir:
   // 1. Campos internos (__id, __sources)
@@ -4060,15 +4160,343 @@ function renderProfileCard(id){
   commentArea.value = rowComments[id]||profileNotes[id]||'';
   document.getElementById('btnSaveComment').onclick = ()=>{
     const v = commentArea.value.trim();
-    if(v){ rowComments[id]=v; profileNotes[id]=v; }
+    if(v){ rowComments[id]=v; profileNotes[id]=v; addTimelineEntry(id,'comment','Comentario guardado', v.slice(0,60)+(v.length>60?'…':'')); }
     else { delete rowComments[id]; delete profileNotes[id]; }
+    saveProfilesToStorage();
     document.getElementById('btnSaveComment').textContent = '✓ Guardado';
     setTimeout(()=>{ document.getElementById('btnSaveComment').textContent = 'Guardar comentario'; }, 1500);
+    renderProfileTimeline(id);
   };
 
   // Agregar vínculo
   document.getElementById('btnAddLink').onclick = ()=> openAddLinkForm(id);
+
+  // Eventos de vida
+  renderProfileEvents(id);
+  document.getElementById('btnAddEvent').onclick = ()=> openAddEventForm(id);
+
+  // Grupos y membresías
+  renderProfileGroups(id);
+  document.getElementById('btnAddGroup').onclick = ()=> openAddGroupForm(id);
+
+  // Timeline
+  renderProfileTimeline(id);
 }
+
+/* ============================================================
+   HELPER: añadir entrada al timeline y auto-guardar
+============================================================ */
+function addTimelineEntry(id, type, action, detail){
+  if(!profileTimeline[id]) profileTimeline[id] = [];
+  profileTimeline[id].unshift({
+    ts: new Date().toISOString(),
+    type, action, detail
+  });
+  if(profileTimeline[id].length > 100) profileTimeline[id].length = 100;
+  saveProfilesToStorage();
+}
+
+function fmtDate(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? iso : d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
+}
+
+/* ============================================================
+   EVENTOS DE VIDA
+   Casamientos, nacimientos, fallecimientos, Bar/Bat Mitzvá, etc.
+   Algunos eventos crean vínculos automáticos entre perfiles.
+============================================================ */
+const EVENT_TYPES = [
+  { id:'casamiento',   icon:'💍', label:'Casamiento',        autoLink:'cónyuge' },
+  { id:'nacimiento',   icon:'👶', label:'Nacimiento de hijo', autoLink:'hijo/a' },
+  { id:'fallecimiento',icon:'🕯️', label:'Fallecimiento',      autoLink:null,    status:'inactivo' },
+  { id:'bar_mitzvah',  icon:'✡️', label:'Bar Mitzvá',         autoLink:null },
+  { id:'bat_mitzvah',  icon:'✡️', label:'Bat Mitzvá',         autoLink:null },
+  { id:'brit',         icon:'✡️', label:'Brit Milá',          autoLink:null },
+  { id:'mudanza',      icon:'🏠', label:'Mudanza',            autoLink:null },
+  { id:'graduacion',   icon:'🎓', label:'Graduación',         autoLink:null },
+  { id:'otro',         icon:'📌', label:'Otro',               autoLink:null },
+];
+
+function renderProfileEvents(id){
+  const el = document.getElementById('profileEvents');
+  const events = profileEvents[id]||[];
+  if(!events.length){
+    el.innerHTML = '<div class="profile-no-links">Sin eventos registrados.</div>';
+    return;
+  }
+  el.innerHTML = `<div class="event-list">${events.map((ev,idx)=>{
+    const et = EVENT_TYPES.find(t=>t.id===ev.type)||{icon:'📌',label:ev.type};
+    const relatedHtml = ev.relatedId
+      ? `<div class="event-related" data-target="${ev.relatedId}">↗ ${escHtml(ev.relatedName||'Ver perfil relacionado')}</div>`
+      : ev.relatedName ? `<div style="font-size:11px;color:var(--text-dim);">Con: ${escHtml(ev.relatedName)}</div>` : '';
+    return `<div class="event-row">
+      <div class="event-icon">${et.icon}</div>
+      <div class="event-body">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span class="event-type">${escHtml(et.label)}</span>
+          <span class="event-date">${fmtDate(ev.date)}</span>
+        </div>
+        ${ev.desc ? `<div class="event-desc">${escHtml(ev.desc)}</div>` : ''}
+        ${relatedHtml}
+      </div>
+      <button class="event-del" data-idx="${idx}" title="Eliminar evento">✕</button>
+    </div>`;
+  }).join('')}</div>`;
+
+  el.querySelectorAll('.event-related[data-target]').forEach(el2=>{
+    el2.addEventListener('click', ()=>{
+      const tid = parseInt(el2.dataset.target,10);
+      activeProfileId = tid;
+      renderProfilesList();
+      renderProfileCard(tid);
+      document.getElementById('profilesMain').scrollTo({top:0,behavior:'smooth'});
+    });
+  });
+  el.querySelectorAll('.event-del').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      profileEvents[id].splice(parseInt(btn.dataset.idx),1);
+      renderProfileEvents(id);
+      saveProfilesToStorage();
+    });
+  });
+}
+
+function openAddEventForm(id){
+  const form = document.getElementById('addEventForm');
+  form.classList.remove('hidden');
+  const personOptions = mergedData.filter(r=>r.__id!==id)
+    .map(r=>`<option value="${r.__id}">${escHtml(getPersonDisplayName(r))}</option>`).join('');
+  form.innerHTML = `
+    <div class="filter-group"><label>Tipo de evento</label>
+      <select id="evType">${EVENT_TYPES.map(t=>`<option value="${t.id}">${t.icon} ${t.label}</option>`).join('')}</select>
+    </div>
+    <div class="filter-group"><label>Fecha</label>
+      <input type="date" id="evDate" value="${new Date().toISOString().slice(0,10)}">
+    </div>
+    <div class="filter-group" style="flex:1;"><label>Descripción (opcional)</label>
+      <input type="text" id="evDesc" placeholder="Ej: Se casaron en el Club Israelita">
+    </div>
+    <div class="filter-group" style="min-width:180px;"><label>Persona relacionada (opcional)</label>
+      <select id="evRelated"><option value="">— nadie —</option>${personOptions}</select>
+    </div>
+    <div class="filter-group" style="align-self:flex-end;">
+      <button class="primary" id="evSave" style="font-size:11px;padding:7px 12px;">Guardar</button>
+      <button class="secondary" id="evCancel" style="font-size:11px;padding:7px 12px;margin-top:4px;">Cancelar</button>
+    </div>
+  `;
+  document.getElementById('evCancel').onclick = ()=> form.classList.add('hidden');
+  document.getElementById('evSave').onclick = ()=>{
+    const type = document.getElementById('evType').value;
+    const date = document.getElementById('evDate').value;
+    const desc = document.getElementById('evDesc').value.trim();
+    const relatedId = parseInt(document.getElementById('evRelated').value)||null;
+    const relatedRow = relatedId ? mergedData.find(r=>r.__id===relatedId) : null;
+    const relatedName = relatedRow ? getPersonDisplayName(relatedRow) : '';
+    const et = EVENT_TYPES.find(t=>t.id===type);
+
+    if(!profileEvents[id]) profileEvents[id] = [];
+    profileEvents[id].unshift({type, date, desc, relatedId, relatedName});
+
+    // Efectos automáticos del evento
+    if(et && et.autoLink && relatedId){
+      // Crear vínculo mutuo en ambos perfiles
+      if(!profileLinks[id]) profileLinks[id]=[];
+      if(!profileLinks[relatedId]) profileLinks[relatedId]=[];
+      const myName = getPersonDisplayName(mergedData.find(r=>r.__id===id));
+      profileLinks[id].push({type:et.autoLink, targetId:relatedId, targetName:relatedName, auto:false});
+      profileLinks[relatedId].push({type:et.autoLink, targetId:id, targetName:myName, auto:false});
+    }
+    if(et && et.status === 'inactivo'){
+      rowStatus[id] = 'inactivo';
+    }
+
+    const etLabel = et ? et.label : type;
+    addTimelineEntry(id, 'event', etLabel, desc || (relatedName ? `Con ${relatedName}` : ''));
+    if(relatedId) addTimelineEntry(relatedId, 'event', etLabel, `Con ${getPersonDisplayName(mergedData.find(r=>r.__id===id))}`);
+
+    form.classList.add('hidden');
+    renderProfileEvents(id);
+    renderProfileTimeline(id);
+    renderProfileLinks(id, mergedData.find(r=>r.__id===id));
+    saveProfilesToStorage();
+  };
+}
+
+/* ============================================================
+   GRUPOS Y MEMBRESÍAS
+============================================================ */
+const COMMON_GROUPS = ['Socios Abrejim','Comisión directiva','Voluntarios','Donantes','Familias del colegio','Madres','Padres','Jóvenes','Adultos mayores','Comité de eventos'];
+
+function renderProfileGroups(id){
+  const el = document.getElementById('profileGroups');
+  const groups = profileGroups[id]||[];
+  if(!groups.length){
+    el.innerHTML = '<div class="profile-no-links">Sin grupos registrados.</div>';
+    return;
+  }
+  el.innerHTML = `<div class="group-list">${groups.map((g,idx)=>{
+    const active = !g.until || new Date(g.until) >= new Date();
+    return `<div class="group-row">
+      <div style="flex:1;min-width:0;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span class="group-name">${escHtml(g.name)}</span>
+          <span class="group-badge">${active?'activo':'inactivo'}</span>
+        </div>
+        ${g.role ? `<span class="group-role">${escHtml(g.role)}</span>` : ''}
+        <div class="group-dates">
+          Desde ${fmtDate(g.since)}${g.until ? ` · Hasta ${fmtDate(g.until)}` : ''}
+        </div>
+      </div>
+      <button class="group-del" data-idx="${idx}" title="Quitar del grupo">✕</button>
+    </div>`;
+  }).join('')}</div>`;
+  el.querySelectorAll('.group-del').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      profileGroups[id].splice(parseInt(btn.dataset.idx),1);
+      renderProfileGroups(id);
+      saveProfilesToStorage();
+    });
+  });
+}
+
+function openAddGroupForm(id){
+  const form = document.getElementById('addGroupForm');
+  form.classList.remove('hidden');
+  form.innerHTML = `
+    <div class="filter-group" style="flex:2;">
+      <label>Grupo</label>
+      <input type="text" id="grpName" list="grpSuggestions" placeholder="Nombre del grupo">
+      <datalist id="grpSuggestions">${COMMON_GROUPS.map(g=>`<option value="${escHtml(g)}">`).join('')}</datalist>
+    </div>
+    <div class="filter-group"><label>Rol (opcional)</label>
+      <input type="text" id="grpRole" placeholder="ej: Tesorero, Vocal">
+    </div>
+    <div class="filter-group"><label>Desde</label>
+      <input type="date" id="grpSince" value="${new Date().toISOString().slice(0,10)}">
+    </div>
+    <div class="filter-group"><label>Hasta (vacío = activo)</label>
+      <input type="date" id="grpUntil">
+    </div>
+    <div class="filter-group" style="align-self:flex-end;">
+      <button class="primary" id="grpSave" style="font-size:11px;padding:7px 12px;">Guardar</button>
+      <button class="secondary" id="grpCancel" style="font-size:11px;padding:7px 12px;margin-top:4px;">Cancelar</button>
+    </div>
+  `;
+  document.getElementById('grpCancel').onclick = ()=> form.classList.add('hidden');
+  document.getElementById('grpSave').onclick = ()=>{
+    const name = document.getElementById('grpName').value.trim();
+    if(!name) return;
+    const role = document.getElementById('grpRole').value.trim();
+    const since = document.getElementById('grpSince').value;
+    const until = document.getElementById('grpUntil').value||null;
+    if(!profileGroups[id]) profileGroups[id]=[];
+    profileGroups[id].push({name, role, since, until});
+    addTimelineEntry(id, 'group', `Se unió a ${name}`, role||'');
+    form.classList.add('hidden');
+    renderProfileGroups(id);
+    renderProfileTimeline(id);
+    saveProfilesToStorage();
+  };
+}
+
+/* ============================================================
+   TIMELINE / HISTORIAL DE CAMBIOS
+============================================================ */
+function renderProfileTimeline(id){
+  const el = document.getElementById('profileTimeline');
+  const entries = profileTimeline[id]||[];
+
+  // Agregar automáticamente la importación original como primer evento si no existe
+  const hasImport = entries.some(e=>e.type==='import');
+  if(!hasImport && mergedData.find(r=>r.__id===id)){
+    const row = mergedData.find(r=>r.__id===id);
+    const fuentes = (row.__sources||[]).join(', ');
+    // No escribir al array todavía — solo mostrar virtualmente
+    const virtualEntry = { ts: null, type:'import', action:'Importado', detail:`Fuentes: ${fuentes}` };
+    const all = [...entries, virtualEntry];
+    renderTimelineHTML(el, all);
+    return;
+  }
+  renderTimelineHTML(el, entries);
+}
+
+function renderTimelineHTML(el, entries){
+  if(!entries.length){
+    el.innerHTML = '<div class="profile-no-links">Sin historial registrado.</div>';
+    return;
+  }
+  el.innerHTML = `<div class="timeline-list">${entries.map(e=>`
+    <div class="timeline-item ${e.type}">
+      <div class="timeline-date">${e.ts ? fmtDate(e.ts) : 'Origen'}</div>
+      <div class="timeline-content">
+        <div class="timeline-action">${escHtml(e.action)}</div>
+        ${e.detail ? `<div class="timeline-detail">${escHtml(e.detail)}</div>` : ''}
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+/* ============================================================
+   ALERTAS AUTOMÁTICAS — cumpleaños próximos, miembros sin estado
+============================================================ */
+function getUpcomingAlerts(){
+  const alerts = [];
+  const today = new Date();
+  const DOB_COL = /fecha.*nac|nac.*fecha|birthday|birth.*date|fecnac/i;
+  const dobCol = mergedColumns.find(c=> DOB_COL.test(c));
+
+  mergedData.forEach(row=>{
+    // Cumpleaños en los próximos 7 días
+    if(dobCol){
+      const dob = getResolvedValue(row, dobCol);
+      if(!isEmpty(dob)){
+        const age = calcAge(String(dob));
+        if(age !== null){
+          const d = new Date(String(dob));
+          if(!isNaN(d)){
+            const thisYear = new Date(today.getFullYear(), d.getMonth(), d.getDate());
+            const diffDays = Math.round((thisYear - today) / 86400000);
+            if(diffDays >= 0 && diffDays <= 7){
+              alerts.push({
+                type: 'birthday', icon:'🎂',
+                text: `${getPersonDisplayName(row)} cumple ${age+1} años en ${diffDays===0?'hoy':diffDays===1?'1 día':`${diffDays} días`}`,
+                id: row.__id
+              });
+            }
+          }
+        }
+      }
+    }
+  });
+  return alerts;
+}
+
+function renderAlertsBar(){
+  const bar = document.getElementById('profilesExportBar');
+  if(!bar || !mergedData.length) return;
+  const alerts = getUpcomingAlerts();
+  if(!alerts.length) return;
+
+  const alertsHtml = `<div class="alerts-banner">
+    <div style="font-family:var(--mono);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--accent-2);margin-bottom:2px;">🔔 Alertas (${alerts.length})</div>
+    ${alerts.map(a=>`
+      <div class="alert-item" data-id="${a.id}">
+        <span class="alert-icon">${a.icon}</span>
+        <span class="alert-name">${escHtml(a.text)}</span>
+      </div>`).join('')}
+  </div>`;
+
+  bar.insertAdjacentHTML('beforebegin', alertsHtml);
+  document.querySelectorAll('.alert-item[data-id]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      activeProfileId = parseInt(el.dataset.id,10);
+      renderProfilesList();
+      renderProfileCard(activeProfileId);
+    });
+  });
+}
+
 
 function calcAge(fechaStr){
   if(!fechaStr) return null;
@@ -4078,7 +4506,10 @@ function calcAge(fechaStr){
   if(isNaN(d.getTime())){
     // try dd/mm/yyyy
     const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if(m) d = new Date(`${m[3].length===2?'20'+m[3]:m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+    if(m){
+      const yr = m[3].length===2 ? '20'+m[3] : m[3];
+      d = new Date(`${yr}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`);
+    }
   }
   if(isNaN(d.getTime())) return null;
   const now = new Date();
@@ -4218,8 +4649,11 @@ function openAddLinkForm(id){
     const targetName = targetRow ? getPersonDisplayName(targetRow) : '?';
     if(!profileLinks[id]) profileLinks[id]=[];
     profileLinks[id].push({ type, targetId, targetName, auto: false });
+    addTimelineEntry(id, 'link', `Vínculo agregado: ${type}`, targetName);
     formEl.classList.add('hidden');
     renderProfileLinks(id, mergedData.find(r=>r.__id===id));
+    renderProfileTimeline(id);
+    saveProfilesToStorage();
   });
   document.getElementById('btnCancelLink').addEventListener('click', ()=> formEl.classList.add('hidden'));
 }
@@ -4250,6 +4684,7 @@ document.getElementById('btnExportProject').addEventListener('click', ()=>{
     confirmedPairLinkSet: [...confirmedPairLinkSet],
     conflictResolutions, cellEdits,
     rowComments, rowStatus, profileLinks, profileNotes,
+    profileEvents, profileGroups, profileTimeline,
     exportColumns, exportColumnEnabled, referenceSourceName,
     activeFilters, filterCombineMode, globalSearchTerm, savedViews, sortState,
     currentPage, pageSize,
@@ -4335,6 +4770,9 @@ async function importProject(file){
     rowStatus = project.rowStatus || {};
     profileLinks = project.profileLinks || {};
     profileNotes = project.profileNotes || {};
+    profileEvents = project.profileEvents || {};
+    profileGroups = project.profileGroups || {};
+    profileTimeline = project.profileTimeline || {};
     editHistory = []; editFuture = [];
     exportColumns = project.exportColumns && project.exportColumns.length ? project.exportColumns : [...mergedColumns];
     exportColumnEnabled = project.exportColumnEnabled || {};
