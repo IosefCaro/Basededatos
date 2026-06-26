@@ -774,9 +774,140 @@
   }
   .loading-msg{ font-family: var(--mono); font-size:12px; color: var(--text-dim); }
   @keyframes spin{ to{ transform: rotate(360deg); } }
+
+  /* ── Login screen ─────────────────────────────────────────── */
+  #loginScreen{
+    position:fixed; inset:0; z-index:2000;
+    background-color: var(--bg);
+    background-image: radial-gradient(circle at 1px 1px, rgba(43,40,32,0.07) 1px, transparent 0);
+    background-size: 24px 24px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .login-box{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: 4px solid var(--accent);
+    border-radius: 4px 4px 8px 8px;
+    padding: 40px 44px;
+    width: 100%; max-width: 400px;
+    box-shadow: 0 8px 32px rgba(43,40,32,0.12);
+  }
+  .login-brand{
+    display:flex; align-items:center; gap:12px;
+    margin-bottom: 32px;
+  }
+  .login-brand .mark{
+    font-family: var(--mono); font-size:11px; font-weight:700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    background: var(--accent); color: var(--panel);
+    padding: 4px 8px; border-radius: 3px;
+  }
+  .login-brand h1{ font-family:var(--display); font-size:17px; font-weight:700; }
+  .login-box h2{
+    font-family: var(--display); font-size:22px; font-weight:700;
+    margin-bottom: 6px;
+  }
+  .login-sub{
+    font-size:13px; color:var(--text-dim); margin-bottom:28px;
+  }
+  .login-field{ margin-bottom:16px; }
+  .login-field label{
+    display:block; font-family:var(--mono); font-size:11px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.05em; color:var(--text-dim);
+    margin-bottom:6px;
+  }
+  .login-field input{
+    width:100%; padding:10px 12px; border:1px solid var(--border);
+    border-radius:4px; font-family:var(--sans); font-size:14px;
+    background:var(--panel-2); color:var(--text);
+    outline:none; transition: border-color .15s;
+  }
+  .login-field input:focus{ border-color:var(--accent); }
+  .login-btn{
+    width:100%; padding:11px; margin-top:8px;
+    background:var(--accent); color:var(--panel);
+    border:none; border-radius:4px; cursor:pointer;
+    font-family:var(--mono); font-size:13px; font-weight:700;
+    letter-spacing:0.06em; text-transform:uppercase;
+    transition: opacity .15s;
+  }
+  .login-btn:hover{ opacity:0.88; }
+  .login-btn:disabled{ opacity:0.5; cursor:not-allowed; }
+  .login-error{
+    margin-top:12px; padding:10px 12px; border-radius:4px;
+    background: var(--conflict-bg); border:1px solid var(--conflict);
+    color: var(--conflict); font-size:13px; display:none;
+  }
+  .login-toggle{
+    margin-top:18px; text-align:center;
+    font-size:12px; color:var(--text-dim);
+  }
+  .login-toggle a{
+    color:var(--accent); cursor:pointer; text-decoration:underline;
+  }
+  .login-success{
+    margin-top:12px; padding:10px 12px; border-radius:4px;
+    background:rgba(47,107,82,0.1); border:1px solid var(--accent);
+    color:var(--accent); font-size:13px; display:none;
+  }
+  /* Avatar de usuario en el header */
+  .user-pill{
+    display:flex; align-items:center; gap:8px;
+    padding:5px 12px 5px 6px;
+    border:1px solid var(--border); border-radius:20px;
+    background:var(--panel-2); font-size:12px;
+  }
+  .user-pill-avatar{
+    width:24px; height:24px; border-radius:50%;
+    background:var(--accent); color:var(--panel);
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--mono); font-size:10px; font-weight:700;
+  }
+  .user-pill-email{ max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-dim); }
+  .user-pill-logout{
+    background:none; border:none; cursor:pointer;
+    font-size:13px; color:var(--text-dim); padding:0; line-height:1;
+  }
+  .user-pill-logout:hover{ color:var(--conflict); }
+
 </style>
 </head>
 <body>
+
+<!-- ═══ PANTALLA DE LOGIN ═══ -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-brand">
+      <span class="mark">COMUNIDAD</span>
+      <h1>Gestión de personas</h1>
+    </div>
+    <h2 id="loginTitle">Iniciar sesión</h2>
+    <p class="login-sub" id="loginSub">Ingresá con tu cuenta para acceder a la base.</p>
+    <div class="login-field">
+      <label>Email</label>
+      <input type="email" id="loginEmail" placeholder="nombre@organización.com" autocomplete="email">
+    </div>
+    <div class="login-field" id="loginPassField">
+      <label>Contraseña</label>
+      <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <div class="login-field hidden" id="loginPass2Field">
+      <label>Repetir contraseña</label>
+      <input type="password" id="loginPass2" placeholder="••••••••" autocomplete="new-password">
+    </div>
+    <button class="login-btn" id="loginBtn">Entrar</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-success" id="loginSuccess"></div>
+    <div class="login-toggle">
+      <span id="loginToggleText">¿No tenés cuenta?</span>
+      <a id="loginToggleLink"> Registrarse</a>
+    </div>
+    <div class="login-toggle" style="margin-top:8px;">
+      <a id="loginForgotLink">Olvidé mi contraseña</a>
+    </div>
+  </div>
+</div>
+
 <div class="app">
   <div class="loading-overlay hidden" id="loadingOverlay">
     <div class="loading-box">
@@ -792,10 +923,17 @@
         <div class="sub">Buscá, editá y conectá los perfiles de tu comunidad</div>
       </div>
     </div>
-    <nav class="main-nav">
-      <button class="nav-btn active" id="navProfiles" data-panel="profiles">👤 Perfiles</button>
-      <button class="nav-btn" id="navImport" data-panel="import">📥 Importar base</button>
-    </nav>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <nav class="main-nav">
+        <button class="nav-btn active" id="navProfiles" data-panel="profiles">👤 Perfiles</button>
+        <button class="nav-btn" id="navImport" data-panel="import">📥 Importar base</button>
+      </nav>
+      <div class="user-pill" id="userPill" style="display:none;">
+        <div class="user-pill-avatar" id="userAvatar">?</div>
+        <span class="user-pill-email" id="userEmail"></span>
+        <button class="user-pill-logout" id="btnLogout" title="Cerrar sesión">✕</button>
+      </div>
+    </div>
   </header>
 
   <main>
@@ -1124,6 +1262,160 @@
 const SUPA_URL = 'https://ukkdcovmghajzgfwlicc.supabase.co';
 const SUPA_KEY = 'sb_publishable_zZQYcH1yAS7NWFRw8ktmrQ_A1FtiFUb';
 const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+/* ============================================================
+   AUTH — login / registro / logout
+============================================================ */
+let currentUser = null;
+let loginMode = 'login'; // 'login' | 'register' | 'forgot'
+
+function showLoginScreen(){ document.getElementById('loginScreen').style.display = 'flex'; }
+function hideLoginScreen(){ document.getElementById('loginScreen').style.display = 'none'; }
+
+function setLoginError(msg){
+  const el = document.getElementById('loginError');
+  el.textContent = msg; el.style.display = msg ? 'block' : 'none';
+  document.getElementById('loginSuccess').style.display = 'none';
+}
+function setLoginSuccess(msg){
+  const el = document.getElementById('loginSuccess');
+  el.textContent = msg; el.style.display = msg ? 'block' : 'none';
+  document.getElementById('loginError').style.display = 'none';
+}
+
+function setLoginMode(mode){
+  loginMode = mode;
+  const title   = document.getElementById('loginTitle');
+  const sub     = document.getElementById('loginSub');
+  const btn     = document.getElementById('loginBtn');
+  const p2      = document.getElementById('loginPass2Field');
+  const pf      = document.getElementById('loginPassField');
+  const togText = document.getElementById('loginToggleText');
+  const togLink = document.getElementById('loginToggleLink');
+  const forgot  = document.getElementById('loginForgotLink');
+  setLoginError(''); setLoginSuccess('');
+
+  if(mode === 'login'){
+    title.textContent = 'Iniciar sesión';
+    sub.textContent   = 'Ingresá con tu cuenta para acceder a la base.';
+    btn.textContent   = 'Entrar';
+    pf.classList.remove('hidden'); p2.classList.add('hidden');
+    togText.textContent = '¿No tenés cuenta?'; togLink.textContent = ' Registrarse';
+    forgot.style.display = 'block';
+  } else if(mode === 'register'){
+    title.textContent = 'Crear cuenta';
+    sub.textContent   = 'Completá los datos para registrarte.';
+    btn.textContent   = 'Registrarse';
+    pf.classList.remove('hidden'); p2.classList.remove('hidden');
+    togText.textContent = '¿Ya tenés cuenta?'; togLink.textContent = ' Iniciar sesión';
+    forgot.style.display = 'none';
+  } else if(mode === 'forgot'){
+    title.textContent = 'Recuperar contraseña';
+    sub.textContent   = 'Te enviamos un link para restablecer tu contraseña.';
+    btn.textContent   = 'Enviar link';
+    pf.classList.add('hidden'); p2.classList.add('hidden');
+    togText.textContent = ''; togLink.textContent = '← Volver al login';
+    forgot.style.display = 'none';
+  }
+}
+
+document.getElementById('loginToggleLink').addEventListener('click', ()=>{
+  setLoginMode(loginMode === 'login' ? 'register' : 'login');
+});
+document.getElementById('loginForgotLink').addEventListener('click', ()=>{
+  setLoginMode('forgot');
+});
+
+document.getElementById('loginBtn').addEventListener('click', async ()=>{
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  const pass2 = document.getElementById('loginPass2').value;
+  const btn   = document.getElementById('loginBtn');
+
+  if(!email){ setLoginError('Ingresá tu email.'); return; }
+  btn.disabled = true; btn.textContent = 'Cargando…';
+  setLoginError('');
+
+  try {
+    if(loginMode === 'login'){
+      if(!pass){ setLoginError('Ingresá tu contraseña.'); return; }
+      const { error } = await supa.auth.signInWithPassword({ email, password: pass });
+      if(error) throw error;
+      // onAuthStateChange se encarga del resto
+
+    } else if(loginMode === 'register'){
+      if(!pass){ setLoginError('Ingresá una contraseña.'); return; }
+      if(pass !== pass2){ setLoginError('Las contraseñas no coinciden.'); return; }
+      if(pass.length < 6){ setLoginError('La contraseña debe tener al menos 6 caracteres.'); return; }
+      const { error } = await supa.auth.signUp({ email, password: pass });
+      if(error) throw error;
+      setLoginSuccess('¡Cuenta creada! Revisá tu email para confirmarla y luego iniciá sesión.');
+      setLoginMode('login');
+
+    } else if(loginMode === 'forgot'){
+      const { error } = await supa.auth.resetPasswordForEmail(email, {
+        redirectTo: window.location.href,
+      });
+      if(error) throw error;
+      setLoginSuccess('Link enviado. Revisá tu email.');
+    }
+  } catch(err){
+    setLoginError(err.message || 'Error. Intentá de nuevo.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = loginMode === 'login' ? 'Entrar' : loginMode === 'register' ? 'Registrarse' : 'Enviar link';
+  }
+});
+
+// Enter en los inputs dispara el botón
+['loginEmail','loginPass','loginPass2'].forEach(id => {
+  document.getElementById(id)?.addEventListener('keydown', e => {
+    if(e.key === 'Enter') document.getElementById('loginBtn').click();
+  });
+});
+
+document.getElementById('btnLogout').addEventListener('click', async ()=>{
+  await supa.auth.signOut();
+});
+
+function updateUserPill(user){
+  const pill   = document.getElementById('userPill');
+  const avatar = document.getElementById('userAvatar');
+  const emailEl= document.getElementById('userEmail');
+  if(user){
+    const initials = (user.email||'?').substring(0,2).toUpperCase();
+    avatar.textContent = initials;
+    emailEl.textContent = user.email;
+    pill.style.display = 'flex';
+  } else {
+    pill.style.display = 'none';
+  }
+}
+
+// Escuchar cambios de sesión
+supa.auth.onAuthStateChange(async (event, session) => {
+  if(session?.user){
+    currentUser = session.user;
+    updateUserPill(currentUser);
+    hideLoginScreen();
+    // Cargar datos si aún no hay nada
+    if(!mergedData.length){
+      switchMode('import'); showImportStep(1);
+      const hasData = await loadProfilesFromStorage();
+      if(hasData){
+        exportColumns = [...mergedColumns];
+        exportColumnEnabled = {};
+        mergedColumns.forEach(c => exportColumnEnabled[c] = true);
+        renderResults();
+        switchMode('profiles');
+      }
+    }
+  } else {
+    currentUser = null;
+    updateUserPill(null);
+    showLoginScreen();
+  }
+});
 
 // Indicador visual de sincronización
 function setSyncStatus(state, msg=''){
@@ -5019,20 +5311,19 @@ function downloadBlob(content, filename, type){
 }
 
 /* ============================================================
-   INICIO: cargar perfiles desde Supabase o mostrar importación
+   INICIO — la sesión la maneja onAuthStateChange
+   Mostramos login por defecto; si ya hay sesión activa,
+   el listener la detecta y oculta el login automáticamente.
 ============================================================ */
 (async function init(){
-  // Mostrar importación mientras carga, para que la UI no quede en blanco
   switchMode('import');
   showImportStep(1);
-  const hasData = await loadProfilesFromStorage();
-  if(hasData){
-    exportColumns = [...mergedColumns];
-    exportColumnEnabled = {};
-    mergedColumns.forEach(c => exportColumnEnabled[c] = true);
-    renderResults();
-    switchMode('profiles');
+  // Verificar si ya hay sesión guardada (cookie/localStorage de Supabase Auth)
+  const { data: { session } } = await supa.auth.getSession();
+  if(!session){
+    showLoginScreen();
   }
+  // El resto lo maneja onAuthStateChange
 })();
 
 </script>
