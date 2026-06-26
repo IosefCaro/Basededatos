@@ -1113,10 +1113,43 @@
     </div>
   </div>
 
-  <footer>Procesamiento 100% local — los archivos no se suben a ningún servidor.</footer>
+  <footer>Procesamiento local · Base de datos: Supabase (ukkdcovmghajzgfwlicc)</footer>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
+/* ============================================================
+   SUPABASE — configuración
+============================================================ */
+const SUPA_URL = 'https://ukkdcovmghajzgfwlicc.supabase.co';
+const SUPA_KEY = 'sb_publishable_zZQYcH1yAS7NWFRw8ktmrQ_A1FtiFUb';
+const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+
+// Indicador visual de sincronización
+function setSyncStatus(state, msg=''){
+  let el = document.getElementById('syncStatus');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'syncStatus';
+    el.style.cssText = `position:fixed;bottom:12px;right:12px;z-index:9999;font-family:var(--mono);
+      font-size:11px;font-weight:600;padding:6px 12px;border-radius:4px;
+      display:flex;align-items:center;gap:6px;transition:opacity .3s;`;
+    document.body.appendChild(el);
+  }
+  const styles = {
+    saving:  { bg:'#ad7a35', color:'#fbf6ea', icon:'💾', text: msg||'Guardando…' },
+    ok:      { bg:'#2f6b52', color:'#fbf6ea', icon:'✓',  text: msg||'Guardado' },
+    loading: { bg:'#2f6b52', color:'#fbf6ea', icon:'⟳',  text: msg||'Cargando…' },
+    error:   { bg:'#b3402f', color:'#fbf6ea', icon:'✗',  text: msg||'Error al guardar' },
+  };
+  const s = styles[state] || styles.ok;
+  el.style.background = s.bg;
+  el.style.color = s.color;
+  el.innerHTML = `${s.icon} ${s.text}`;
+  el.style.opacity = '1';
+  if(state === 'ok') setTimeout(()=>{ el.style.opacity='0'; }, 2000);
+}
+
 /* ============================================================
    ESTADO GLOBAL
 ============================================================ */
@@ -1458,39 +1491,208 @@ document.getElementById('navImport').addEventListener('click', ()=>{ switchMode(
 /* ============================================================
    LOCALSTORAGE — perfiles y vínculos persisten entre sesiones
 ============================================================ */
-function saveProfilesToStorage(){
+/* ============================================================
+   PERSISTENCIA — Supabase (reemplaza localStorage)
+   Las funciones mantienen los mismos nombres para mínima
+   perturbación del resto del código. saveProfilesToStorage
+   ahora es async pero los llamadores no necesitan awaitar.
+============================================================ */
+
+// Guarda todo el estado en Supabase.
+// Estrategia: upsert masivo de personas + tablas relacionadas.
+// Se lanza en background; los errores muestran un badge rojo.
+async function saveProfilesToStorage(){
   if(!mergedData.length) return;
-  try{
-    localStorage.setItem('comunidad_mergedData', JSON.stringify(mergedData));
-    localStorage.setItem('comunidad_mergedColumns', JSON.stringify(mergedColumns));
-    localStorage.setItem('comunidad_profileLinks', JSON.stringify(profileLinks));
-    localStorage.setItem('comunidad_profileNotes', JSON.stringify(profileNotes));
-    localStorage.setItem('comunidad_profileEvents', JSON.stringify(profileEvents));
-    localStorage.setItem('comunidad_profileGroups', JSON.stringify(profileGroups));
-    localStorage.setItem('comunidad_profileTimeline', JSON.stringify(profileTimeline));
-    localStorage.setItem('comunidad_rowComments', JSON.stringify(rowComments));
-    localStorage.setItem('comunidad_rowStatus', JSON.stringify(rowStatus));
-    localStorage.setItem('comunidad_conflictResolutions', JSON.stringify(conflictResolutions));
-    localStorage.setItem('comunidad_sources_names', JSON.stringify(sources.map(s=>s.name)));
-  } catch(e){ console.warn('localStorage lleno o no disponible'); }
+  setSyncStatus('saving');
+  try {
+    // ── 1. sesion (singleton de columnas + fuentes) ──────────
+    await supa.from('sesion').upsert({
+      id: 'singleton',
+      merged_columns: mergedColumns,
+      source_names: sources.map(s=>s.name),
+    }, { onConflict: 'id' });
+
+    // ── 2. personas (upsert en lotes de 200) ─────────────────
+    const personasRows = mergedData.map(row => {
+      const id = String(row.__id);
+      // Separar metadatos del objeto datos
+      const { __id, __sources, ...datos } = row;
+      return {
+        id,
+        datos,
+        fuentes: __sources || [],
+        columnas: mergedColumns,
+        conflict_res: conflictResolutions[id] || {},
+        cell_edits: Object.fromEntries(
+          Object.entries(cellEdits)
+            .filter(([k]) => k.startsWith(id + '::'))
+            .map(([k,v]) => [k.split('::')[1], v])
+        ),
+        comentario: rowComments[id] || null,
+        estado: rowStatus[id] || null,
+      };
+    });
+
+    const BATCH = 200;
+    for(let i=0; i<personasRows.length; i+=BATCH){
+      const { error } = await supa.from('personas').upsert(
+        personasRows.slice(i, i+BATCH),
+        { onConflict: 'id' }
+      );
+      if(error) throw error;
+    }
+
+    // ── 3. tablas relacionadas: borrar y reinssertar ──────────
+    // Vínculos
+    if(Object.keys(profileLinks).length){
+      const vinculosRows = [];
+      Object.entries(profileLinks).forEach(([pid, links]) => {
+        (links||[]).forEach(l => vinculosRows.push({
+          persona_id: String(pid),
+          tipo: l.type,
+          target_id: l.targetId ? String(l.targetId) : null,
+          target_name: l.targetName || null,
+        }));
+      });
+      await supa.from('vinculos').delete().neq('id', 0); // borra todo
+      if(vinculosRows.length) await supa.from('vinculos').insert(vinculosRows);
+    }
+
+    // Eventos
+    if(Object.keys(profileEvents).length){
+      const eventosRows = [];
+      Object.entries(profileEvents).forEach(([pid, evts]) => {
+        (evts||[]).forEach(e => eventosRows.push({
+          persona_id: String(pid),
+          tipo: e.type,
+          fecha: e.date || null,
+          descripcion: e.desc || null,
+          related_id: e.relatedId ? String(e.relatedId) : null,
+          related_name: e.relatedName || null,
+        }));
+      });
+      await supa.from('eventos').delete().neq('id', 0);
+      if(eventosRows.length) await supa.from('eventos').insert(eventosRows);
+    }
+
+    // Grupos
+    if(Object.keys(profileGroups).length){
+      const gruposRows = [];
+      Object.entries(profileGroups).forEach(([pid, grps]) => {
+        (grps||[]).forEach(g => gruposRows.push({
+          persona_id: String(pid),
+          nombre: g.name,
+          rol: g.role || null,
+          desde: g.since || null,
+          hasta: g.until || null,
+        }));
+      });
+      await supa.from('grupos').delete().neq('id', 0);
+      if(gruposRows.length) await supa.from('grupos').insert(gruposRows);
+    }
+
+    // Timeline
+    if(Object.keys(profileTimeline).length){
+      const timelineRows = [];
+      Object.entries(profileTimeline).forEach(([pid, entries]) => {
+        (entries||[]).forEach(t => timelineRows.push({
+          persona_id: String(pid),
+          ts: String(t.ts),
+          accion: t.action,
+          detalle: t.detail || null,
+        }));
+      });
+      await supa.from('timeline').delete().neq('id', 0);
+      if(timelineRows.length) await supa.from('timeline').insert(timelineRows);
+    }
+
+    setSyncStatus('ok');
+  } catch(err){
+    console.error('Supabase save error:', err);
+    setSyncStatus('error', 'Error: ' + (err.message||'ver consola'));
+  }
 }
 
-function loadProfilesFromStorage(){
-  try{
-    const md = localStorage.getItem('comunidad_mergedData');
-    if(!md) return false;
-    mergedData = JSON.parse(md);
-    mergedColumns = JSON.parse(localStorage.getItem('comunidad_mergedColumns')||'[]');
-    profileLinks = JSON.parse(localStorage.getItem('comunidad_profileLinks')||'{}');
-    profileNotes = JSON.parse(localStorage.getItem('comunidad_profileNotes')||'{}');
-    profileEvents = JSON.parse(localStorage.getItem('comunidad_profileEvents')||'{}');
-    profileGroups = JSON.parse(localStorage.getItem('comunidad_profileGroups')||'{}');
-    profileTimeline = JSON.parse(localStorage.getItem('comunidad_profileTimeline')||'{}');
-    rowComments = JSON.parse(localStorage.getItem('comunidad_rowComments')||'{}');
-    rowStatus = JSON.parse(localStorage.getItem('comunidad_rowStatus')||'{}');
-    conflictResolutions = JSON.parse(localStorage.getItem('comunidad_conflictResolutions')||'{}');
+// Carga todo el estado desde Supabase al iniciar.
+async function loadProfilesFromStorage(){
+  setSyncStatus('loading', 'Cargando base…');
+  try {
+    // ── sesion ────────────────────────────────────────────────
+    const { data: sesData } = await supa.from('sesion').select('*').eq('id','singleton').single();
+    if(!sesData) { setSyncStatus('ok','Sin datos'); return false; }
+    mergedColumns = sesData.merged_columns || [];
+
+    // ── personas (todas) ──────────────────────────────────────
+    let allPersonas = [];
+    let from = 0;
+    const PAGE = 1000;
+    while(true){
+      const { data, error } = await supa.from('personas').select('*').range(from, from+PAGE-1);
+      if(error) throw error;
+      allPersonas = allPersonas.concat(data);
+      if(data.length < PAGE) break;
+      from += PAGE;
+    }
+    if(!allPersonas.length){ setSyncStatus('ok','Sin datos'); return false; }
+
+    mergedData = allPersonas.map(p => ({
+      __id: p.id,
+      __sources: p.fuentes,
+      ...p.datos,
+    }));
+    conflictResolutions = {};
+    cellEdits = {};
+    rowComments = {};
+    rowStatus = {};
+    allPersonas.forEach(p => {
+      if(p.conflict_res && Object.keys(p.conflict_res).length) conflictResolutions[p.id] = p.conflict_res;
+      if(p.cell_edits) Object.entries(p.cell_edits).forEach(([col,v])=>{ cellEdits[`${p.id}::${col}`]=v; });
+      if(p.comentario) rowComments[p.id] = p.comentario;
+      if(p.estado) rowStatus[p.id] = p.estado;
+    });
+
+    // ── vínculos ─────────────────────────────────────────────
+    const { data: vData } = await supa.from('vinculos').select('*');
+    profileLinks = {};
+    (vData||[]).forEach(v => {
+      if(!profileLinks[v.persona_id]) profileLinks[v.persona_id] = [];
+      profileLinks[v.persona_id].push({ type: v.tipo, targetId: v.target_id, targetName: v.target_name });
+    });
+
+    // ── eventos ───────────────────────────────────────────────
+    const { data: eData } = await supa.from('eventos').select('*');
+    profileEvents = {};
+    (eData||[]).forEach(e => {
+      if(!profileEvents[e.persona_id]) profileEvents[e.persona_id] = [];
+      profileEvents[e.persona_id].push({ type: e.tipo, date: e.fecha, desc: e.descripcion, relatedId: e.related_id, relatedName: e.related_name });
+    });
+
+    // ── grupos ────────────────────────────────────────────────
+    const { data: gData } = await supa.from('grupos').select('*');
+    profileGroups = {};
+    (gData||[]).forEach(g => {
+      if(!profileGroups[g.persona_id]) profileGroups[g.persona_id] = [];
+      profileGroups[g.persona_id].push({ name: g.nombre, role: g.rol, since: g.desde, until: g.hasta });
+    });
+
+    // ── timeline ──────────────────────────────────────────────
+    const { data: tData } = await supa.from('timeline').select('*');
+    profileTimeline = {};
+    (tData||[]).forEach(t => {
+      if(!profileTimeline[t.persona_id]) profileTimeline[t.persona_id] = [];
+      profileTimeline[t.persona_id].push({ ts: t.ts, action: t.accion, detail: t.detalle });
+    });
+
+    profileNotes = {};
+    allPersonas.forEach(p => { if(p.comentario) profileNotes[p.id] = p.comentario; });
+
+    setSyncStatus('ok', `${mergedData.length} personas cargadas`);
     return mergedData.length > 0;
-  } catch(e){ return false; }
+  } catch(err){
+    console.error('Supabase load error:', err);
+    setSyncStatus('error', 'Error al cargar: ' + (err.message||'ver consola'));
+    return false;
+  }
 }
 
 /* ============================================================
@@ -4817,16 +5019,19 @@ function downloadBlob(content, filename, type){
 }
 
 /* ============================================================
-   INICIO: cargar perfiles guardados o mostrar pantalla de importación
+   INICIO: cargar perfiles desde Supabase o mostrar importación
 ============================================================ */
-(function init(){
-  const hasData = loadProfilesFromStorage();
+(async function init(){
+  // Mostrar importación mientras carga, para que la UI no quede en blanco
+  switchMode('import');
+  showImportStep(1);
+  const hasData = await loadProfilesFromStorage();
   if(hasData){
+    exportColumns = [...mergedColumns];
+    exportColumnEnabled = {};
+    mergedColumns.forEach(c => exportColumnEnabled[c] = true);
+    renderResults();
     switchMode('profiles');
-  } else {
-    // Primera vez o sin datos: mostrar importación
-    switchMode('import');
-    showImportStep(1);
   }
 })();
 
