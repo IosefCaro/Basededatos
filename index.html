@@ -497,7 +497,17 @@
   }
 
   /* Close button */
-  .profiles-close{
+  .profiles-export-bar{
+    padding:10px 14px; border-bottom:1px solid var(--border);
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .profiles-export-bar button{
+    width:100%; font-size:11px; padding:7px 10px; text-align:left;
+  }
+  .profiles-export-bar .export-hint{
+    font-family:var(--mono); font-size:10px; color:var(--text-dim);
+    text-align:center; padding:2px 0;
+  }
     position: fixed; bottom: 20px; right: 24px; z-index: 910;
     background: var(--text); color: var(--panel);
     font-family: var(--mono); font-size: 11px; font-weight: 700;
@@ -723,6 +733,7 @@
             <input type="text" id="profileSearch" placeholder="🔎 Buscar persona…" autocomplete="off">
             <button class="primary" id="btnNewProfile" style="width:100%; margin-top:6px; font-size:11px; padding:8px;">+ Nuevo perfil manual</button>
           </div>
+          <div class="profiles-export-bar" id="profilesExportBar"></div>
           <div class="profiles-list" id="profilesList"></div>
         </div>
 
@@ -3676,13 +3687,22 @@ document.getElementById('btnExportAudit').addEventListener('click', ()=>{
 
 // Columnas que contienen nombres de familiares (se usan para detectar vínculos automáticos)
 const FAMILY_COL_PATTERNS = [
-  { re: /madre|mom|mother/i,   type: 'madre' },
-  { re: /padre|papá|father|dad/i, type: 'padre' },
-  { re: /tutor/i,              type: 'tutor' },
-  { re: /c[oó]nyuge|esposa|esposo|pareja/i, type: 'cónyuge' },
-  { re: /hermano/i,            type: 'hermano/a' },
-  { re: /hijo|hija/i,          type: 'hijo/a' },
-  { re: /familiar|emergencia/i,type: 'familiar' },
+  { re: /madre|mom|mother|mamá/i,              type: 'madre' },
+  { re: /padre|papá|father|dad/i,              type: 'padre' },
+  { re: /tutor/i,                              type: 'tutor' },
+  { re: /c[oó]nyuge|esposa|esposo|pareja/i,   type: 'cónyuge' },
+  { re: /hermano/i,                            type: 'hermano/a' },
+  { re: /hijo|hija/i,                          type: 'hijo/a' },
+  { re: /familiar|emergencia/i,               type: 'familiar' },
+  { re: /progenitor/i,                         type: 'progenitor' },
+  { re: /apoderado/i,                          type: 'apoderado' },
+  { re: /encargado/i,                          type: 'encargado' },
+  { re: /celular.*(madre|padre|fam)/i,         type: 'contacto' },
+  { re: /(madre|padre|fam).*celular/i,         type: 'contacto' },
+  { re: /mail.*(madre|padre|fam)/i,            type: 'contacto' },
+  { re: /(madre|padre|fam).*mail/i,            type: 'contacto' },
+  { re: /tel.*(madre|padre|fam)/i,             type: 'contacto' },
+  { re: /(madre|padre|fam).*tel/i,             type: 'contacto' },
 ];
 
 const LINK_TYPE_OPTIONS = ['madre','padre','hijo/a','cónyuge','hermano/a','tutor','familiar','otro'];
@@ -3751,8 +3771,51 @@ function initProfileLinks(){
 // ── Render de la lista lateral ──────────────────────────────
 let profileSearchTerm = '';
 
+function renderProfilesExportBar(){
+  const bar = document.getElementById('profilesExportBar');
+  if(!bar) return;
+  if(!mergedData.length){ bar.innerHTML=''; return; }
+  bar.innerHTML = `
+    <div class="export-hint">${mergedData.length} personas · Descargar:</div>
+    <button class="secondary" id="btnProfilesExportXlsx">📥 Excel completo</button>
+    <button class="secondary" id="btnProfilesExportCsv">📄 CSV</button>
+  `;
+  document.getElementById('btnProfilesExportXlsx').addEventListener('click', ()=>{
+    const cols = mergedColumns.length ? ['__id',...mergedColumns,'__sources'] : Object.keys(mergedData[0]||{});
+    const headers = cols.map(exportLabel);
+    const rows = mergedData.map(row=>{
+      const obj={};
+      cols.forEach((col,i)=>{
+        if(col==='__sources') obj[headers[i]] = (row.__sources||[]).join(' + ');
+        else if(col==='__id') obj[headers[i]] = row.__id;
+        else obj[headers[i]] = isEmpty(getResolvedValue(row,col)) ? '' : getResolvedValue(row,col);
+      });
+      return obj;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Base unificada');
+    XLSX.writeFile(wb, 'base_unificada.xlsx');
+  });
+  document.getElementById('btnProfilesExportCsv').addEventListener('click', ()=>{
+    const cols = mergedColumns.length ? ['__id',...mergedColumns,'__sources'] : Object.keys(mergedData[0]||{});
+    const headers = cols.map(exportLabel);
+    const lines = [headers.map(csvEscape).join(',')];
+    mergedData.forEach(row=>{
+      lines.push(cols.map(col=>{
+        if(col==='__sources') return csvEscape((row.__sources||[]).join(' + '));
+        if(col==='__id') return csvEscape(row.__id);
+        const v = getResolvedValue(row,col);
+        return csvEscape(isEmpty(v)?'':v);
+      }).join(','));
+    });
+    downloadBlob(lines.join('\n'), 'base_unificada.csv', 'text/csv;charset=utf-8;');
+  });
+}
+
 function renderProfilesList(){
   initProfileLinks();
+  renderProfilesExportBar();
   const countEl = document.getElementById('profilesCount');
   const listEl  = document.getElementById('profilesList');
   if(!mergedData.length){
@@ -3809,9 +3872,12 @@ const FIELD_LABELS = {
 
 // Columnas que van al bloque de "datos personales" (excluye las de vínculos familiares y campos de fuente)
 const SKIP_IN_FIELDS = new Set([
-  '__id','__sources','Apellido y nombre de la madre','N° de Celular de la madre','Mail de la madre',
+  '__id','__sources',
+  // columnas que van a vínculos (la exclusión por FAMILY_COL_PATTERNS cubre el resto)
+  'Apellido y nombre de la madre','N° de Celular de la madre','Mail de la madre',
   'Apellido y nombre del padre','N° de Celular del padre','Mail del padre',
   'Contacto de familiar de emergencia (indicar nombre, apellido y N° de celular)',
+  'Madre','Tel madre','Email madre','Padre','Tel padre','Email padre','Emergencia',
 ]);
 
 function renderProfileCard(id){
@@ -3845,18 +3911,30 @@ function renderProfileCard(id){
   statusSel.value = rowStatus[id]||'';
   statusSel.onchange = ()=>{ rowStatus[id] = statusSel.value||undefined; if(!statusSel.value) delete rowStatus[id]; };
 
-  // Campos de datos personales
+  // Campos de datos personales — excluir:
+  // 1. Campos internos (__id, __sources)
+  // 2. Columnas de vínculos familiares (madre, padre, tutor, hermano, etc.)
+  // 3. Columnas completamente vacías para esta persona
   const fieldsEl = document.getElementById('profileFields');
-  const fieldCols = mergedColumns.filter(c=> !SKIP_IN_FIELDS.has(c) && !FAMILY_COL_PATTERNS.some(p=>p.re.test(c)));
-  fieldsEl.innerHTML = fieldCols.map(col=>{
-    const val = getResolvedValue(row, col);
-    const label = FIELD_LABELS[col] || col;
-    const empty = isEmpty(val);
-    return `<div class="profile-field">
-      <div class="profile-field-label">${escHtml(label)}</div>
-      <div class="profile-field-value ${empty?'profile-field-empty':''}">${empty ? '—' : escHtml(String(val))}</div>
-    </div>`;
-  }).join('');
+  const fieldCols = mergedColumns.filter(c=>{
+    if(SKIP_IN_FIELDS.has(c)) return false;
+    if(FAMILY_COL_PATTERNS.some(p=> p.re.test(c))) return false;
+    const val = getResolvedValue(row, c);
+    return !isEmpty(val); // solo mostrar si tiene dato
+  });
+
+  if(fieldCols.length===0){
+    fieldsEl.innerHTML = '<div class="profile-field-empty" style="grid-column:1/-1">Sin datos registrados.</div>';
+  } else {
+    fieldsEl.innerHTML = fieldCols.map(col=>{
+      const val = getResolvedValue(row, col);
+      const label = FIELD_LABELS[col] || col;
+      return `<div class="profile-field">
+        <div class="profile-field-label">${escHtml(label)}</div>
+        <div class="profile-field-value">${escHtml(String(val))}</div>
+      </div>`;
+    }).join('');
+  }
 
   // Vínculos familiares
   renderProfileLinks(id, row);
@@ -3878,16 +3956,51 @@ function renderProfileCard(id){
 
 function renderProfileLinks(id, row){
   const linksEl = document.getElementById('profileLinks');
-  // Combinar vínculos automáticos y manuales
   const links = profileLinks[id]||[];
 
-  if(links.length===0){
-    linksEl.innerHTML = '<div class="profile-no-links">No se detectaron vínculos familiares en esta base. Usá "+ Agregar" para vincular manualmente.</div>';
+  // También mostrar datos de contacto de familiares que están en columnas pero no son perfiles
+  // (ej: "N° de Celular de la madre" y "Mail de la madre" acompañan a "Apellido y nombre de la madre")
+  const rawFamilyData = []; // {type, name, phone, email}
+  mergedColumns.forEach(col=>{
+    const pattern = FAMILY_COL_PATTERNS.find(p=>p.re.test(col) && p.type !== 'contacto');
+    if(!pattern) return;
+    const val = getResolvedValue(row, col);
+    if(isEmpty(val)) return;
+    // solo columnas de nombre (no de tel/mail — esos se buscan como complemento)
+    if(/celular|tel[eé]|mail|email|correo/i.test(col)) return;
+    // buscar datos de contacto asociados (buscar otras columnas que mencionan el mismo familiar)
+    let phone='', email='';
+    mergedColumns.forEach(c2=>{
+      if(c2===col) return;
+      const isSameFam = FAMILY_COL_PATTERNS.some(p=> p.re.test(col) && p.re.test(c2));
+      if(!isSameFam) return;
+      const v2 = getResolvedValue(row, c2);
+      if(isEmpty(v2)) return;
+      if(/celular|tel[eé]/i.test(c2)) phone = String(v2);
+      if(/mail|email|correo/i.test(c2)) email = String(v2);
+    });
+    rawFamilyData.push({type: pattern.type, name: String(val), phone, email, fromColumn: col});
+  });
+
+  const allLinks = [...links];
+
+  if(allLinks.length===0 && rawFamilyData.length===0){
+    linksEl.innerHTML = '<div class="profile-no-links">No se detectaron vínculos familiares. Usá "+ Agregar" para vincular manualmente.</div>';
     return;
   }
 
-  linksEl.innerHTML = `<div class="profile-links-list">${links.map((lk,idx)=>{
-    const badge = lk.auto ? '<span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-left:4px;">(auto)</span>' : '';
+  const rawHtml = rawFamilyData.map(f=>`
+    <div class="profile-link-row">
+      <span class="profile-link-type">${escHtml(f.type)}</span>
+      <div style="flex:1; min-width:0;">
+        <div style="font-size:13px; font-weight:600;">${escHtml(f.name)}</div>
+        ${f.phone ? `<div style="font-size:11px; color:var(--text-dim); font-family:var(--mono);">📞 ${escHtml(f.phone)}</div>` : ''}
+        ${f.email ? `<div style="font-size:11px; color:var(--text-dim); font-family:var(--mono);">✉ ${escHtml(f.email)}</div>` : ''}
+      </div>
+    </div>`).join('');
+
+  const manualHtml = allLinks.map((lk,idx)=>{
+    const badge = lk.auto ? '' : '<span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-left:4px;">(manual)</span>';
     const nameHtml = lk.targetId
       ? `<span class="profile-link-name" data-target="${lk.targetId}">${escHtml(lk.targetName)}</span>`
       : `<span class="profile-link-name" style="cursor:default;">${escHtml(lk.targetName)}</span>`;
@@ -3896,7 +4009,9 @@ function renderProfileLinks(id, row){
       ${nameHtml}${badge}
       <button class="profile-link-del" data-idx="${idx}" title="Quitar vínculo">✕</button>
     </div>`;
-  }).join('')}</div>`;
+  }).join('');
+
+  linksEl.innerHTML = `<div class="profile-links-list">${rawHtml}${manualHtml}</div>`;
 
   // Navegar al perfil vinculado al hacer click en el nombre
   linksEl.querySelectorAll('.profile-link-name[data-target]').forEach(el=>{
