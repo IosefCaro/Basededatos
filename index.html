@@ -309,6 +309,145 @@
   .export-col-row .drag-handle{ color:var(--text-dim); font-family:var(--mono); }
   .export-col-row.sortable-ghost{ opacity:0.4; }
 
+  /* ── PERFILES ──────────────────────────────────────────── */
+  .profiles-overlay{
+    position: fixed; inset: 0; z-index: 900;
+    background: var(--bg);
+    background-image: radial-gradient(circle at 1px 1px, rgba(43,40,32,0.07) 1px, transparent 0);
+    background-size: 24px 24px;
+    display: flex; flex-direction: column;
+  }
+  .profiles-layout{
+    display: flex; flex: 1; overflow: hidden; gap: 0;
+  }
+
+  /* Sidebar */
+  .profiles-sidebar{
+    width: 280px; flex-shrink: 0;
+    background: var(--panel); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .profiles-sidebar-header{
+    padding: 14px; border-bottom: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .profiles-count{ font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  .profiles-sidebar-header input{
+    width: 100%; font-size: 13px; padding: 7px 10px;
+  }
+  .profiles-list{
+    flex: 1; overflow-y: auto;
+  }
+  .profile-list-item{
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    cursor: pointer; display: flex; align-items: center; gap: 10px;
+    transition: background .1s;
+  }
+  .profile-list-item:hover{ background: var(--panel-2); }
+  .profile-list-item.active{ background: rgba(47,107,82,0.10); border-left: 3px solid var(--accent); }
+  .profile-list-avatar{
+    width: 34px; height: 34px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 13px;
+    color: #fff; flex-shrink: 0;
+  }
+  .profile-list-info{ min-width: 0; }
+  .profile-list-name{ font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .profile-list-meta{ font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+
+  /* Main profile card */
+  .profiles-main{ flex: 1; overflow-y: auto; padding: 24px; }
+  .profiles-empty-state{
+    height: 100%; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: var(--text-dim); font-size: 14px;
+  }
+  .profile-card{ display: flex; flex-direction: column; gap: 0; max-width: 720px; }
+  .profile-card-header{
+    background: var(--panel); border: 1px solid var(--border);
+    border-top: 5px solid var(--accent);
+    border-radius: 3px 3px 0 0;
+    padding: 20px 24px; display: flex; align-items: flex-start; gap: 16px;
+  }
+  .profile-avatar{
+    width: 56px; height: 56px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 22px;
+    color: #fff; flex-shrink: 0;
+  }
+  .profile-card-title{ flex: 1; min-width: 0; }
+  .profile-name{ font-family: var(--display); font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .profile-roles{ display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .profile-role-badge{
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .profile-role-alumno{ background: rgba(74,111,165,0.15); color: #4a6fa5; border: 1px solid #4a6fa5; }
+  .profile-role-socio{ background: rgba(47,107,82,0.12); color: var(--accent); border: 1px solid var(--accent); }
+  .profile-role-donante{ background: rgba(173,122,53,0.12); color: var(--accent-2); border: 1px solid var(--accent-2); }
+  .profile-role-familiar{ background: rgba(123,77,142,0.12); color: #7b4d8e; border: 1px solid #7b4d8e; }
+  .profile-sources{ display: flex; gap: 4px; flex-wrap: wrap; }
+  .profile-status-sel{
+    font-family: var(--mono); font-size: 11px; padding: 4px 8px;
+    border-radius: 3px; min-width: 130px;
+  }
+
+  /* Sections */
+  .profile-sections{ border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; overflow: hidden; }
+  .profile-section{ padding: 18px 24px; border-bottom: 1px solid var(--border); background: var(--panel); }
+  .profile-section:last-child{ border-bottom: none; }
+  .profile-section-title{
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-dim);
+    margin-bottom: 12px; display: flex; align-items: center;
+  }
+
+  /* Fields grid */
+  .profile-fields{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+  .profile-field{ display: flex; flex-direction: column; gap: 2px; }
+  .profile-field-label{ font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .profile-field-value{ font-size: 13px; font-weight: 500; }
+  .profile-field-empty{ color: var(--text-dim); font-style: italic; }
+
+  /* Links */
+  .profile-links-list{ display: flex; flex-direction: column; gap: 8px; }
+  .profile-link-row{
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 4px;
+  }
+  .profile-link-type{
+    font-family: var(--mono); font-size: 10px; font-weight: 700;
+    color: var(--accent-2); text-transform: uppercase; min-width: 70px;
+  }
+  .profile-link-name{ flex: 1; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .profile-link-name:hover{ color: var(--accent); text-decoration: underline; }
+  .profile-link-del{ background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px; }
+  .profile-link-del:hover{ color: var(--conflict); }
+  .profile-no-links{ font-size: 12px; color: var(--text-dim); font-style: italic; }
+
+  /* Add link form */
+  .add-link-form{ margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+  .add-link-form select, .add-link-form input{ font-size: 13px; }
+
+  /* Comment */
+  #profileComment{
+    width: 100%; background: var(--panel-2); border: 1px solid var(--border);
+    border-radius: 3px; color: var(--text); font-size: 13px; padding: 8px 12px;
+    resize: vertical; font-family: var(--sans);
+  }
+
+  /* Close button */
+  .profiles-close{
+    position: fixed; bottom: 20px; right: 24px; z-index: 910;
+    background: var(--text); color: var(--panel);
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    border: none; border-radius: 3px; padding: 10px 16px; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(43,40,32,0.3);
+  }
+  .profiles-close:hover{ background: var(--conflict); }
+
   /* Modal comparación lado a lado */
   .modal-overlay{
     position:fixed; inset:0; z-index:800; background:rgba(43,40,32,0.45);
@@ -512,6 +651,7 @@
       <span class="step" data-step="2">2 · Coincidencias</span>
       <span class="step" data-step="3">3 · Revisión</span>
       <span class="step" data-step="4">4 · Resultado</span>
+      <span class="step" data-step="5">5 · Perfiles</span>
     </div>
   </header>
 
@@ -703,6 +843,7 @@
       <div class="export-row">
         <button class="primary" id="btnExportCsv">Exportar CSV</button>
         <button class="primary" id="btnExportXlsx">Exportar Excel</button>
+        <button class="primary" id="btnViewProfiles">👤 Ver perfiles →</button>
         <button class="secondary" id="btnExportNew">Exportar solo nuevos</button>
         <button class="secondary" id="btnExportAudit">Exportar auditoría de fusión</button>
         <button class="secondary" id="btnExportProject">💾 Guardar proyecto</button>
@@ -713,6 +854,77 @@
     </section>
 
   </main>
+
+  <!-- STEP 5: PERFILES -->
+  <div class="profiles-overlay hidden" id="profilesPanel">
+    <div class="profiles-layout">
+
+      <!-- Lista lateral -->
+      <div class="profiles-sidebar">
+        <div class="profiles-sidebar-header">
+          <span class="profiles-count" id="profilesCount"></span>
+          <input type="text" id="profileSearch" placeholder="🔎 Buscar persona…" autocomplete="off">
+        </div>
+        <div class="profiles-list" id="profilesList"></div>
+      </div>
+
+      <!-- Ficha de perfil -->
+      <div class="profiles-main" id="profilesMain">
+        <div class="profiles-empty-state" id="profilesEmptyState">
+          <div style="font-size:32px; margin-bottom:12px;">👤</div>
+          <div>Seleccioná una persona de la lista para ver su perfil</div>
+        </div>
+        <div class="profile-card hidden" id="profileCard">
+          <div class="profile-card-header">
+            <div class="profile-avatar" id="profileAvatar"></div>
+            <div class="profile-card-title">
+              <div class="profile-name" id="profileName"></div>
+              <div class="profile-roles" id="profileRoles"></div>
+              <div class="profile-sources" id="profileSources"></div>
+            </div>
+            <div class="profile-status-wrap">
+              <select id="profileStatusSel" class="profile-status-sel">
+                <option value="">Sin estado</option>
+                <option value="ok">✓ Verificado</option>
+                <option value="pendiente">⏳ Pendiente</option>
+                <option value="dudoso">? Dudoso</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="profile-sections">
+
+            <!-- Datos personales -->
+            <div class="profile-section">
+              <div class="profile-section-title">Datos personales</div>
+              <div class="profile-fields" id="profileFields"></div>
+            </div>
+
+            <!-- Vínculos familiares -->
+            <div class="profile-section">
+              <div class="profile-section-title">
+                Vínculos familiares
+                <button class="secondary" id="btnAddLink" style="font-size:10px; padding:3px 8px; margin-left:8px;">+ Agregar</button>
+              </div>
+              <div id="profileLinks"></div>
+              <div id="addLinkForm" class="add-link-form hidden"></div>
+            </div>
+
+            <!-- Comentario -->
+            <div class="profile-section">
+              <div class="profile-section-title">Comentario</div>
+              <textarea id="profileComment" rows="3" placeholder="Anotaciones sobre esta persona…"></textarea>
+              <button class="secondary" id="btnSaveComment" style="margin-top:6px; font-size:11px;">Guardar comentario</button>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <button class="profiles-close" id="profilesClose">✕ Cerrar perfiles</button>
+  </div>
 
   <!-- MODAL: Comparación lado a lado -->
   <div class="modal-overlay hidden" id="compareModal">
@@ -759,6 +971,11 @@ let candidatePairs = []; // posibles coincidencias por nombre/fecha que requiere
 let pairDecisions = {}; // {candidateId: bool} si el usuario confirma la fusión
 let candidatesShowAll = false; // si hay muchos candidatos, por defecto se muestran solo los primeros
 let lastAnalysisStats = null; // estadísticas del último análisis (para mostrar en el paso 3)
+
+// ── Perfiles ──────────────────────────────────────────────────────────────────
+let profileLinks = {}; // {__id: [{type, targetId, targetName}]}
+let profileNotes = {}; // {__id: string} (notas libres, separado de rowComments)
+let activeProfileId = null; // __id del perfil actualmente abierto
 
 let mergedClusters = []; // array de arrays de filas crudas {data, sourceIdx, sourceName}, una por persona del resultado
 let mergedColInfo = {}; // columna normalizada -> {type, field} (para combinar/comparar valores)
@@ -1034,11 +1251,13 @@ function showPanel(step){
   document.getElementById('panel-match').classList.toggle('hidden', step!==2);
   document.getElementById('panel-review').classList.toggle('hidden', step!==3);
   document.getElementById('panel-results').classList.toggle('hidden', step!==4);
+  document.getElementById('profilesPanel').classList.toggle('hidden', step!==5);
   document.querySelectorAll('.step').forEach(el=>{
     const s = parseInt(el.dataset.step);
     el.classList.toggle('active', s===step);
     el.classList.toggle('done', s<step);
   });
+  if(step===5) renderProfilesList();
 }
 
 /* ============================================================
@@ -1906,6 +2125,7 @@ function runMerge(){
   expandedRowIds = new Set();
   editHistory = []; editFuture = []; cellEdits = {};
   rowComments = {}; rowStatus = {};
+  profileLinks = {}; profileNotes = {}; activeProfileId = null;
   exportColumns = [...mergedColumns];
   exportColumnEnabled = {};
   mergedColumns.forEach(c=> exportColumnEnabled[c]=true);
@@ -3281,6 +3501,294 @@ document.getElementById('btnExportAudit').addEventListener('click', ()=>{
 });
 
 /* ============================================================
+   PERFILES — paso 5
+   Genera fichas navegables a partir de mergedData, detecta
+   vínculos familiares automáticamente desde las columnas
+   (Apellido y nombre de la madre/padre, etc.) y permite
+   agregar/editar vínculos a mano.
+============================================================ */
+
+// Columnas que contienen nombres de familiares (se usan para detectar vínculos automáticos)
+const FAMILY_COL_PATTERNS = [
+  { re: /madre|mom|mother/i,   type: 'madre' },
+  { re: /padre|papá|father|dad/i, type: 'padre' },
+  { re: /tutor/i,              type: 'tutor' },
+  { re: /c[oó]nyuge|esposa|esposo|pareja/i, type: 'cónyuge' },
+  { re: /hermano/i,            type: 'hermano/a' },
+  { re: /hijo|hija/i,          type: 'hijo/a' },
+  { re: /familiar|emergencia/i,type: 'familiar' },
+];
+
+const LINK_TYPE_OPTIONS = ['madre','padre','hijo/a','cónyuge','hermano/a','tutor','familiar','otro'];
+
+// Detectar tipo de rol de una persona según sus fuentes y columnas
+function detectRoles(row){
+  const roles = [];
+  const sources = row.__sources || [];
+  // Intentar detectar por nombre de fuente
+  sources.forEach(s=>{
+    const sl = s.toLowerCase();
+    if(/alumno|escuela|colegio|nivel|grado|jardin/i.test(sl)) roles.push('alumno');
+    if(/socio|abrejim|miembro/i.test(sl)) roles.push('socio');
+    if(/donante|donacion/i.test(sl)) roles.push('donante');
+    if(/evento|participante/i.test(sl)) roles.push('evento');
+  });
+  // Detectar por columnas de la fila
+  if(!isEmpty(row['Sala/Grado/Curso']) || !isEmpty(row['Nivel']) || !isEmpty(row['Apellido del alumno/Alumna'])) roles.push('alumno');
+  if(!isEmpty(row['Estado']) || !isEmpty(row['Abrej jornada'])) roles.push('socio');
+  if(roles.length===0) roles.push('familiar');
+  return [...new Set(roles)];
+}
+
+function getPersonDisplayName(row){
+  const full = [row.Apellido||row['Apellido del alumno/Alumna']||'', row.Nombre||row['Nombre del alumno/a']||'']
+    .map(s=>String(s||'').trim()).filter(Boolean).join(', ');
+  if(full) return full;
+  const combo = row['Nombre y Apellido']||row['Apellido & Nombre']||row['APELLIDO Y NOMBRE']||'';
+  return String(combo||'').trim() || `Persona #${row.__id}`;
+}
+
+function getInitials(name){
+  return name.split(/[\s,]+/).filter(Boolean).slice(0,2).map(w=>w[0].toUpperCase()).join('');
+}
+
+// Detectar vínculos automáticos leyendo columnas como "Apellido y nombre de la madre"
+function detectAutoLinks(row){
+  const found = [];
+  mergedColumns.forEach(col=>{
+    const val = getResolvedValue(row, col);
+    if(isEmpty(val) || typeof val!=='string') return;
+    const pattern = FAMILY_COL_PATTERNS.find(p=> p.re.test(col));
+    if(!pattern) return;
+    // buscar a esa persona en mergedData por nombre
+    const valNorm = normalizeStr(val);
+    const match = mergedData.find(r=> r.__id!==row.__id && nameSimilarity(normalizeStr(getPersonDisplayName(r)), valNorm) > 0.85);
+    if(match){
+      found.push({ type: pattern.type, targetId: match.__id, targetName: getPersonDisplayName(match), auto: true });
+    } else {
+      // no encontrado en la base, guardar el nombre de texto igual
+      found.push({ type: pattern.type, targetId: null, targetName: String(val).trim(), auto: true });
+    }
+  });
+  return found;
+}
+
+// Inicializar profileLinks con los vínculos automáticos detectados (solo si no hay manual ya)
+function initProfileLinks(){
+  mergedData.forEach(row=>{
+    if(profileLinks[row.__id]) return; // ya tiene vínculos (manuales o de un proyecto guardado)
+    const auto = detectAutoLinks(row);
+    if(auto.length>0) profileLinks[row.__id] = auto;
+  });
+}
+
+// ── Render de la lista lateral ──────────────────────────────
+let profileSearchTerm = '';
+
+function renderProfilesList(){
+  initProfileLinks();
+  const countEl = document.getElementById('profilesCount');
+  const listEl  = document.getElementById('profilesList');
+  if(!mergedData.length){
+    countEl.textContent = 'Sin datos';
+    listEl.innerHTML = '<div class="small-note" style="padding:16px;">Procesá las bases primero (pasos 1-4) para ver los perfiles.</div>';
+    return;
+  }
+
+  const term = normalizeStr(profileSearchTerm);
+  const filtered = term
+    ? mergedData.filter(r=> normalizeStr(getPersonDisplayName(r)).includes(term))
+    : mergedData;
+
+  countEl.textContent = `${filtered.length} de ${mergedData.length} personas`;
+
+  listEl.innerHTML = filtered.map(row=>{
+    const name = getPersonDisplayName(row);
+    const initials = getInitials(name);
+    const color = getSourceColor(name);
+    const roles = detectRoles(row);
+    const sources = (row.__sources||[]).map(s=> s.replace(/\.[a-z]+$/i,'').slice(0,18)).join(' · ');
+    const isActive = row.__id === activeProfileId;
+    return `<div class="profile-list-item ${isActive?'active':''}" data-id="${row.__id}">
+      <div class="profile-list-avatar" style="background:${color};">${initials}</div>
+      <div class="profile-list-info">
+        <div class="profile-list-name">${escHtml(name)}</div>
+        <div class="profile-list-meta">${roles.join(' · ')} · ${escHtml(sources)}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.profile-list-item').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      activeProfileId = parseInt(el.dataset.id, 10);
+      renderProfilesList();
+      renderProfileCard(activeProfileId);
+    });
+  });
+
+  if(activeProfileId) renderProfileCard(activeProfileId);
+}
+
+// ── Render de la ficha de perfil ────────────────────────────
+const FIELD_LABELS = {
+  'DNI del alumno/a (ingresarlo sin puntos)': 'DNI',
+  'Apellido del alumno/Alumna': 'Apellido',
+  'Nombre del alumno/a': 'Nombre',
+  'Fecha de nacimiento el alumno/a': 'Fecha de nac.',
+  'Dirección/Domicilio particular de alumno/a': 'Dirección',
+  'Obra social (indicar nombre y Número)': 'Obra social',
+  'Nombre del alumno/a en Hebreo': 'Nombre en hebreo',
+  'Contacto de familiar de emergencia (indicar nombre, apellido y N° de celular)': 'Emergencia',
+};
+
+// Columnas que van al bloque de "datos personales" (excluye las de vínculos familiares y campos de fuente)
+const SKIP_IN_FIELDS = new Set([
+  '__id','__sources','Apellido y nombre de la madre','N° de Celular de la madre','Mail de la madre',
+  'Apellido y nombre del padre','N° de Celular del padre','Mail del padre',
+  'Contacto de familiar de emergencia (indicar nombre, apellido y N° de celular)',
+]);
+
+function renderProfileCard(id){
+  const row = mergedData.find(r=>r.__id===id);
+  const card = document.getElementById('profileCard');
+  const emptyState = document.getElementById('profilesEmptyState');
+  if(!row){ card.classList.add('hidden'); emptyState.classList.remove('hidden'); return; }
+  card.classList.remove('hidden');
+  emptyState.classList.add('hidden');
+
+  const name = getPersonDisplayName(row);
+  const color = getSourceColor(name);
+  const initials = getInitials(name);
+  const roles = detectRoles(row);
+
+  document.getElementById('profileAvatar').textContent = initials;
+  document.getElementById('profileAvatar').style.background = color;
+  document.getElementById('profileName').textContent = name;
+
+  // Roles como badges
+  const roleClasses = { alumno:'profile-role-alumno', socio:'profile-role-socio', donante:'profile-role-donante', familiar:'profile-role-familiar', evento:'profile-role-socio' };
+  document.getElementById('profileRoles').innerHTML = roles.map(r=>
+    `<span class="profile-role-badge ${roleClasses[r]||'profile-role-familiar'}">${r}</span>`
+  ).join('');
+
+  // Chips de fuentes
+  document.getElementById('profileSources').innerHTML = (row.__sources||[]).map(s=>sourceChip(s)).join('');
+
+  // Estado
+  const statusSel = document.getElementById('profileStatusSel');
+  statusSel.value = rowStatus[id]||'';
+  statusSel.onchange = ()=>{ rowStatus[id] = statusSel.value||undefined; if(!statusSel.value) delete rowStatus[id]; };
+
+  // Campos de datos personales
+  const fieldsEl = document.getElementById('profileFields');
+  const fieldCols = mergedColumns.filter(c=> !SKIP_IN_FIELDS.has(c) && !FAMILY_COL_PATTERNS.some(p=>p.re.test(c)));
+  fieldsEl.innerHTML = fieldCols.map(col=>{
+    const val = getResolvedValue(row, col);
+    const label = FIELD_LABELS[col] || col;
+    const empty = isEmpty(val);
+    return `<div class="profile-field">
+      <div class="profile-field-label">${escHtml(label)}</div>
+      <div class="profile-field-value ${empty?'profile-field-empty':''}">${empty ? '—' : escHtml(String(val))}</div>
+    </div>`;
+  }).join('');
+
+  // Vínculos familiares
+  renderProfileLinks(id, row);
+
+  // Comentario
+  const commentArea = document.getElementById('profileComment');
+  commentArea.value = rowComments[id]||profileNotes[id]||'';
+  document.getElementById('btnSaveComment').onclick = ()=>{
+    const v = commentArea.value.trim();
+    if(v){ rowComments[id]=v; profileNotes[id]=v; }
+    else { delete rowComments[id]; delete profileNotes[id]; }
+    document.getElementById('btnSaveComment').textContent = '✓ Guardado';
+    setTimeout(()=>{ document.getElementById('btnSaveComment').textContent = 'Guardar comentario'; }, 1500);
+  };
+
+  // Agregar vínculo
+  document.getElementById('btnAddLink').onclick = ()=> openAddLinkForm(id);
+}
+
+function renderProfileLinks(id, row){
+  const linksEl = document.getElementById('profileLinks');
+  // Combinar vínculos automáticos y manuales
+  const links = profileLinks[id]||[];
+
+  if(links.length===0){
+    linksEl.innerHTML = '<div class="profile-no-links">No se detectaron vínculos familiares en esta base. Usá "+ Agregar" para vincular manualmente.</div>';
+    return;
+  }
+
+  linksEl.innerHTML = `<div class="profile-links-list">${links.map((lk,idx)=>{
+    const badge = lk.auto ? '<span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-left:4px;">(auto)</span>' : '';
+    const nameHtml = lk.targetId
+      ? `<span class="profile-link-name" data-target="${lk.targetId}">${escHtml(lk.targetName)}</span>`
+      : `<span class="profile-link-name" style="cursor:default;">${escHtml(lk.targetName)}</span>`;
+    return `<div class="profile-link-row" data-idx="${idx}">
+      <span class="profile-link-type">${escHtml(lk.type)}</span>
+      ${nameHtml}${badge}
+      <button class="profile-link-del" data-idx="${idx}" title="Quitar vínculo">✕</button>
+    </div>`;
+  }).join('')}</div>`;
+
+  // Navegar al perfil vinculado al hacer click en el nombre
+  linksEl.querySelectorAll('.profile-link-name[data-target]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const tid = parseInt(el.dataset.target, 10);
+      activeProfileId = tid;
+      renderProfilesList();
+      renderProfileCard(tid);
+      // scroll to top of card
+      document.getElementById('profilesMain').scrollTo({top:0, behavior:'smooth'});
+    });
+  });
+
+  // Quitar vínculo
+  linksEl.querySelectorAll('.profile-link-del').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const idx = parseInt(btn.dataset.idx, 10);
+      profileLinks[id].splice(idx, 1);
+      renderProfileLinks(id, row);
+    });
+  });
+}
+
+function openAddLinkForm(id){
+  const formEl = document.getElementById('addLinkForm');
+  formEl.classList.remove('hidden');
+  // Armar lista de personas para el select (excluir la actual)
+  const options = mergedData.filter(r=>r.__id!==id)
+    .map(r=>`<option value="${r.__id}">${escHtml(getPersonDisplayName(r))}</option>`).join('');
+  formEl.innerHTML = `
+    <select id="linkTypeSelect">${LINK_TYPE_OPTIONS.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+    <select id="linkTargetSelect" style="flex:1; min-width:160px;">${options}</select>
+    <button class="primary" id="btnConfirmLink" style="font-size:11px; padding:6px 12px;">Vincular</button>
+    <button class="secondary" id="btnCancelLink" style="font-size:11px; padding:6px 12px;">Cancelar</button>
+  `;
+  document.getElementById('btnConfirmLink').addEventListener('click', ()=>{
+    const type = document.getElementById('linkTypeSelect').value;
+    const targetId = parseInt(document.getElementById('linkTargetSelect').value, 10);
+    const targetRow = mergedData.find(r=>r.__id===targetId);
+    const targetName = targetRow ? getPersonDisplayName(targetRow) : '?';
+    if(!profileLinks[id]) profileLinks[id]=[];
+    profileLinks[id].push({ type, targetId, targetName, auto: false });
+    formEl.classList.add('hidden');
+    renderProfileLinks(id, mergedData.find(r=>r.__id===id));
+  });
+  document.getElementById('btnCancelLink').addEventListener('click', ()=> formEl.classList.add('hidden'));
+}
+
+// ── Wiring ────────────────────────────────────────────────────
+document.getElementById('btnViewProfiles').addEventListener('click', ()=> showPanel(5));
+document.getElementById('profilesClose').addEventListener('click', ()=> showPanel(4));
+
+document.getElementById('profileSearch').addEventListener('input', e=>{
+  profileSearchTerm = e.target.value;
+  renderProfilesList();
+});
+
+/* ============================================================
    PROYECTO COMPLETO: guardar/abrir todo el estado (para pausar y retomar)
 ============================================================ */
 document.getElementById('btnExportProject').addEventListener('click', ()=>{
@@ -3297,7 +3805,7 @@ document.getElementById('btnExportProject').addEventListener('click', ()=>{
     mergedRowToStrongCluster,
     confirmedPairLinkSet: [...confirmedPairLinkSet],
     conflictResolutions, cellEdits,
-    rowComments, rowStatus,
+    rowComments, rowStatus, profileLinks, profileNotes,
     exportColumns, exportColumnEnabled, referenceSourceName,
     activeFilters, filterCombineMode, globalSearchTerm, savedViews, sortState,
     currentPage, pageSize,
@@ -3381,6 +3889,8 @@ async function importProject(file){
     cellEdits = project.cellEdits || {};
     rowComments = project.rowComments || {};
     rowStatus = project.rowStatus || {};
+    profileLinks = project.profileLinks || {};
+    profileNotes = project.profileNotes || {};
     editHistory = []; editFuture = [];
     exportColumns = project.exportColumns && project.exportColumns.length ? project.exportColumns : [...mergedColumns];
     exportColumnEnabled = project.exportColumnEnabled || {};
