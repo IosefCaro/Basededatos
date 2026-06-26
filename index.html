@@ -1,0 +1,3429 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fusión de Bases — Depurador de Registros</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+<style>
+  :root{
+    --bg: #ddd0ae;
+    --panel: #fbf6ea;
+    --panel-2: #f0e6d2;
+    --border: #c9b896;
+    --text: #2b2820;
+    --text-dim: #7a6b4a;
+    --accent: #2f6b52;
+    --accent-2: #ad7a35;
+    --conflict: #b3402f;
+    --conflict-bg: rgba(179,64,47,0.10);
+    --match: #4a8a6f;
+    --mono: 'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, sans-serif;
+    --display: 'Space Grotesk', var(--sans);
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{
+    font-family: var(--sans);
+    background-color: var(--bg);
+    background-image: radial-gradient(circle at 1px 1px, rgba(43,40,32,0.07) 1px, transparent 0);
+    background-size: 24px 24px;
+    color: var(--text);
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ transition:none !important; animation:none !important; }
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+
+  .app{ display:flex; flex-direction:column; min-height:100vh; }
+
+  header{
+    border-bottom: 3px solid var(--text);
+    padding: 18px 28px;
+    background: var(--panel);
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .brand{ display:flex; align-items:baseline; gap:12px; }
+  .brand .mark{
+    font-family: var(--mono); font-weight:700; font-size:12px;
+    color: var(--panel); background: var(--accent);
+    padding: 5px 10px 5px 8px; letter-spacing:0.12em;
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 10px 100%, 0 calc(100% - 10px));
+  }
+  .brand h1{ font-family: var(--display); font-size: 19px; font-weight:700; letter-spacing:-0.01em; }
+  .brand .sub{ font-size:12px; color:var(--text-dim); font-family: var(--mono); }
+
+  .steps{ display:flex; gap:0; font-family: var(--mono); font-size:11px; color: var(--text-dim); }
+  .steps .step{
+    padding: 6px 12px; border:1px solid var(--border); border-bottom:3px solid transparent;
+    background: var(--panel-2); margin-left:-1px; text-transform:uppercase; letter-spacing:0.06em;
+  }
+  .steps .step:first-child{ margin-left:0; }
+  .steps .step.active{ border-bottom-color: var(--accent); color: var(--text); background: var(--panel); font-weight:600; }
+  .steps .step.done{ border-bottom-color: var(--match); color: var(--accent); }
+
+  main{ flex:1; padding: 28px; display:flex; flex-direction:column; gap:24px; max-width: 1400px; width:100%; margin: 0 auto;}
+
+  .panel{
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: 5px solid var(--accent);
+    border-radius: 3px 3px 8px 8px;
+    padding: 24px;
+  }
+  .panel h2{
+    font-family: var(--display); font-size:18px; font-weight:700;
+    letter-spacing:-0.01em; margin-bottom:6px;
+  }
+  .panel .desc{ font-size:13px; color:var(--text-dim); margin-bottom:16px; }
+
+  /* Upload zone */
+  .dropzone{
+    border: 1.5px dashed var(--border);
+    border-radius:4px;
+    padding: 36px;
+    text-align:center;
+    cursor:pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .dropzone:hover, .dropzone.dragover{
+    border-color: var(--accent);
+    background: rgba(47,107,82,0.05);
+  }
+  .dropzone .icon{ font-family: var(--mono); font-size: 28px; color: var(--accent); margin-bottom:8px; }
+  .dropzone .main-txt{ font-size:14px; font-weight:500; }
+  .dropzone .sub-txt{ font-size:12px; color:var(--text-dim); margin-top:4px; }
+  input[type=file]{ display:none; }
+
+  .file-list{ display:flex; flex-direction:column; gap:8px; margin-top:16px; }
+  .file-item{
+    display:flex; align-items:center; justify-content:space-between;
+    background: var(--panel-2); border:1px solid var(--border);
+    border-radius:4px; padding: 10px 14px;
+  }
+  .file-item .info{ display:flex; align-items:center; gap:10px; }
+  .file-item .ext{
+    font-family:var(--mono); font-size:10px; font-weight:700;
+    background: var(--text); color:var(--panel);
+    padding:3px 6px; border-radius:3px; letter-spacing:0.5px;
+  }
+  .file-item .name{ font-size:13px; font-weight:500; }
+  .file-item .meta{ font-size:11px; color:var(--text-dim); font-family: var(--mono); }
+  .file-item button.remove{
+    background:none; border:none; color:var(--text-dim); cursor:pointer;
+    font-size:16px; line-height:1; padding:4px; border-radius:4px;
+  }
+  .file-item button.remove:hover{ color: var(--conflict); background: rgba(179,64,47,0.1); }
+
+  /* Buttons */
+  button.primary, button.secondary{
+    font-family: var(--mono); font-size:12px; font-weight:600;
+    text-transform:uppercase; letter-spacing:0.06em;
+    border-radius: 3px; padding: 10px 18px; cursor:pointer; border:1px solid transparent;
+    transition: opacity .15s, transform .05s, background .15s, color .15s, border-color .15s;
+  }
+  button.primary{ background: var(--accent); color: var(--panel); border-color: var(--accent); }
+  button.primary:hover{ background: var(--text); border-color: var(--text); }
+  button.primary:disabled{ opacity:0.35; cursor:not-allowed; }
+  button.secondary{ background: var(--panel); color: var(--text); border-color: var(--border); }
+  button.secondary:hover{ border-color: var(--accent-2); color: var(--accent-2); }
+  button:active{ transform: scale(0.98); }
+  button:focus-visible, input:focus-visible, select:focus-visible{
+    outline: 2px solid var(--accent-2); outline-offset: 1px;
+  }
+
+  .actions-row{ display:flex; gap:10px; margin-top:18px; flex-wrap:wrap; }
+
+  /* Matching config */
+  .match-grid{ display:flex; flex-direction:column; gap:10px; }
+  .match-rule{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    background: var(--panel-2); border:1px solid var(--border); border-radius:4px; padding: 10px 14px;
+  }
+  .match-rule .badge{
+    font-family: var(--mono); font-size:10px; font-weight:700; color: var(--accent);
+    border:1px solid var(--accent); border-radius:4px; padding:2px 6px;
+  }
+  select, input[type=text], input[type=number]{
+    background: var(--bg); border:1px solid var(--border); color:var(--text);
+    border-radius:3px; padding:7px 10px; font-size:13px; font-family: var(--sans);
+  }
+  select:focus, input:focus{ outline:none; border-color: var(--accent); }
+  .match-rule .arrow{ color: var(--text-dim); font-family:var(--mono); }
+  .match-rule .field-map{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:1; }
+  .match-rule .field-map .src{
+    font-size:11px; color:var(--text-dim); font-family:var(--mono);
+    min-width: 90px;
+  }
+
+  .checkbox-row{ display:flex; align-items:center; gap:8px; font-size:13px; }
+  .checkbox-row input{ accent-color: var(--accent); width:15px; height:15px; }
+
+  /* Results */
+  .stats-row{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
+  .stat{
+    background: var(--panel-2); border:1px solid var(--border); border-left:3px solid var(--border);
+    border-radius: 0 4px 4px 0;
+    padding: 14px 18px; min-width:130px;
+  }
+  .stat .num{ font-family: var(--mono); font-size:24px; font-weight:700; }
+  .stat .label{ font-size:11px; color:var(--text-dim); margin-top:2px; }
+  .stat.conflict{ border-left-color: var(--conflict); }
+  .stat.conflict .num{ color: var(--conflict); }
+  .stat.merged{ border-left-color: var(--match); }
+  .stat.merged .num{ color: var(--match); }
+  .stat.accent{ border-left-color: var(--accent); }
+  .stat.accent .num{ color: var(--accent); }
+
+  /* Filters */
+  .analysis-panels{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
+  .analysis-panel{
+    flex:1; min-width:280px; background:var(--panel-2); border:1px solid var(--border);
+    border-radius:4px; overflow:hidden;
+  }
+  .analysis-panel-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 14px; background:var(--panel); border-bottom:1px solid var(--border);
+    cursor:pointer; user-select:none;
+  }
+  .analysis-panel-header h4{ font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:0.06em; }
+  .analysis-panel-body{ padding:14px; }
+
+  /* Venn */
+  .venn-wrap{ display:flex; flex-direction:column; gap:8px; }
+  .venn-row{ display:flex; align-items:center; gap:8px; font-size:12px; }
+  .venn-bar-bg{ flex:1; background:var(--border); border-radius:3px; height:16px; position:relative; }
+  .venn-bar-fill{ height:100%; border-radius:3px; background:var(--accent); transition: width .3s; }
+  .venn-count{ font-family:var(--mono); font-size:11px; min-width:28px; text-align:right; }
+  .venn-label{ min-width:0; flex:2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-dim); font-size:11px; font-family:var(--mono); }
+
+  /* Column quality */
+  .quality-table{ width:100%; border-collapse:collapse; font-size:11.5px; }
+  .quality-table th{ font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-dim); padding:5px 8px; border-bottom:1px solid var(--border); text-align:left; }
+  .quality-table td{ padding:5px 8px; border-bottom:1px solid var(--border); }
+  .quality-table tr:last-child td{ border-bottom:none; }
+  .quality-bar-wrap{ width:60px; height:8px; background:var(--border); border-radius:3px; display:inline-block; vertical-align:middle; }
+  .quality-bar{ height:100%; border-radius:3px; background:var(--match); }
+  .quality-bar.warn{ background:var(--conflict); }
+
+  .search-bar{ margin-bottom:14px; }
+  .search-input-wrap{
+    display:flex; align-items:center; gap:0;
+    border:1.5px solid var(--border); border-radius:4px;
+    background:var(--panel); overflow:hidden;
+    transition: border-color .15s;
+  }
+  .search-input-wrap:focus-within{ border-color:var(--accent); }
+  .search-icon{ padding:0 10px; color:var(--text-dim); font-size:14px; flex-shrink:0; }
+  .search-input-wrap input{
+    flex:1; border:none; background:transparent; font-size:14px;
+    padding:10px 4px; outline:none; color:var(--text); min-width:0;
+  }
+  .search-count{
+    font-family:var(--mono); font-size:11px; color:var(--text-dim);
+    padding:0 10px; white-space:nowrap; flex-shrink:0;
+  }
+  .search-count.has-results{ color:var(--accent); }
+  .search-count.no-results{ color:var(--conflict); }
+  .search-nav{
+    background:none; border:none; border-left:1px solid var(--border);
+    color:var(--text-dim); cursor:pointer; padding:0 10px; height:100%;
+    font-size:14px; line-height:1; align-self:stretch; display:flex; align-items:center;
+    transition: color .1s, background .1s;
+  }
+  .search-nav:hover{ color:var(--accent); background:rgba(47,107,82,0.07); }
+  .search-nav:disabled{ opacity:0.3; cursor:default; }
+  .search-clear{
+    background:none; border:none; border-left:1px solid var(--border);
+    color:var(--text-dim); cursor:pointer; padding:0 10px; font-size:13px;
+    align-self:stretch; display:flex; align-items:center;
+  }
+  .search-clear:hover{ color:var(--conflict); }
+
+  /* Highlight de coincidencias */
+  mark.search-hit{
+    background: rgba(173,122,53,0.28); color: var(--text);
+    border-radius:2px; padding:0 1px;
+  }
+  mark.search-hit.current{
+    background: var(--accent-2); color: var(--panel);
+  }
+  .filter-options-row{ display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
+  .filter-bar{
+    display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;
+    padding-bottom:16px; border-bottom:1px solid var(--border);
+  }
+  .filter-group{ display:flex; flex-direction:column; gap:4px; }
+  .filter-group label{ font-size:11px; color:var(--text-dim); font-family:var(--mono); }
+  .filter-group select, .filter-group input{ min-width:140px; }
+  .active-filters{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .filter-chip{
+    font-family: var(--mono); font-size:11px; background: rgba(47,107,82,0.08);
+    color: var(--accent); border:1px solid var(--accent); border-radius:3px;
+    padding: 4px 10px; display:flex; align-items:center; gap:6px;
+  }
+  .filter-chip button{ background:none; border:none; color:var(--accent); cursor:pointer; font-size:13px; line-height:1; padding:0;}
+
+  .saved-views{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .view-chip{
+    font-family: var(--mono); font-size:11px; background: rgba(173,122,53,0.10);
+    color: var(--accent-2); border:1px solid var(--accent-2); border-radius:3px;
+    padding: 4px 10px; display:flex; align-items:center; gap:8px; cursor:pointer;
+  }
+  .view-chip button{ background:none; border:none; color:var(--accent-2); cursor:pointer; font-size:13px; line-height:1; padding:0;}
+
+  .manual-edit-bar{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px; }
+  td .btn-undo{ font-size:11px; padding:4px 10px; white-space:nowrap; }
+  td input.row-select{ accent-color: var(--accent); width:15px; height:15px; }
+
+  /* Table */
+  .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:4px; max-height: 600px; }
+  table{ width:100%; border-collapse: collapse; font-size:12.5px; }
+  thead{ position:sticky; top:0; z-index:2; }
+  th{
+    background: var(--panel-2); text-align:left; padding: 10px 12px;
+    font-weight:600; border-bottom:1px solid var(--border); white-space:nowrap;
+    font-family: var(--mono); font-size:11px; color: var(--text-dim);
+    letter-spacing:0.03em; text-transform:uppercase;
+    cursor:pointer; user-select:none;
+  }
+  th:hover{ color: var(--text); }
+  th .sort-arrow{ opacity:0.4; margin-left:4px; }
+  td{ padding: 9px 12px; border-bottom:1px solid var(--border); white-space:nowrap; max-width:240px; overflow:hidden; text-overflow:ellipsis; }
+  tbody tr:hover{ background: rgba(43,40,32,0.035); }
+  tr.detail-row td{ white-space:normal; background: var(--panel-2); max-width:none; }
+  .detail-cards{ display:flex; gap:12px; flex-wrap:wrap; padding:8px 0; }
+
+  .pagination{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:14px 0; }
+  .pagination-controls{ display:flex; align-items:center; gap:12px; }
+
+  .export-columns-list{ display:flex; flex-direction:column; gap:4px; max-width:360px; }
+  .export-col-row{
+    display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:3px;
+    background: var(--panel-2); border:1px solid var(--border); font-size:12.5px; cursor:grab;
+  }
+  .export-col-row .drag-handle{ color:var(--text-dim); font-family:var(--mono); }
+  .export-col-row.sortable-ghost{ opacity:0.4; }
+
+  /* Modal comparación lado a lado */
+  .modal-overlay{
+    position:fixed; inset:0; z-index:800; background:rgba(43,40,32,0.45);
+    display:flex; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-box{
+    background:var(--panel); border:1px solid var(--border);
+    border-top:5px solid var(--accent-2);
+    border-radius:3px 3px 8px 8px;
+    width:100%; max-width:820px; max-height:85vh;
+    display:flex; flex-direction:column; overflow:hidden;
+    box-shadow: 0 12px 40px rgba(43,40,32,0.3);
+  }
+  .modal-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 20px; border-bottom:1px solid var(--border); flex-shrink:0;
+  }
+  .modal-title{ font-family:var(--display); font-size:16px; font-weight:700; }
+  .modal-close{
+    background:none; border:none; font-size:18px; cursor:pointer;
+    color:var(--text-dim); line-height:1; padding:4px;
+  }
+  .modal-close:hover{ color:var(--conflict); }
+  .modal-desc{ padding:10px 20px; font-size:12px; color:var(--text-dim); border-bottom:1px solid var(--border); flex-shrink:0; }
+  #compareBody{ overflow-y:auto; flex:1; padding:16px 20px; }
+  .modal-actions{ padding:14px 20px; border-top:1px solid var(--border); display:flex; gap:10px; flex-shrink:0; }
+
+  .compare-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .compare-table th{
+    font-family:var(--mono); font-size:10px; text-transform:uppercase;
+    letter-spacing:0.05em; color:var(--text-dim); padding:8px 12px;
+    border-bottom:2px solid var(--border); text-align:left;
+  }
+  .compare-table th.source-header{
+    font-size:12px; font-family:var(--sans); font-weight:600; color:var(--text);
+    text-transform:none; letter-spacing:0;
+  }
+  .compare-table td{ padding:7px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+  .compare-table tr:last-child td{ border-bottom:none; }
+  .compare-table .col-label{ color:var(--text-dim); font-family:var(--mono); font-size:11px; }
+  .compare-row-diff td:not(.col-label){ background:rgba(179,64,47,0.07); }
+  .compare-row-same td:not(.col-label){ background:rgba(74,138,111,0.07); }
+  .compare-diff-badge{
+    font-family:var(--mono); font-size:9px; color:var(--conflict);
+    border:1px solid currentColor; border-radius:3px; padding:1px 4px; margin-left:6px;
+    vertical-align:middle;
+  }
+  .compare-same-badge{
+    font-family:var(--mono); font-size:9px; color:var(--match);
+    border:1px solid currentColor; border-radius:3px; padding:1px 4px; margin-left:6px;
+    vertical-align:middle;
+  }
+  .comment-popover{
+    position:absolute; z-index:500; background:var(--panel); border:1px solid var(--border);
+    border-top:4px solid var(--accent-2); border-radius: 3px 3px 8px 8px;
+    padding:16px; width:260px; box-shadow:0 6px 20px rgba(43,40,32,0.22);
+  }
+  .comment-popover-title{ font-family:var(--mono); font-size:11px; color:var(--text-dim); margin-bottom:10px; }
+  .comment-popover textarea{ background:var(--panel-2); border:1px solid var(--border); border-radius:3px; color:var(--text); }
+  .btn-comment{ font-size:11px !important; padding:3px 7px !important; min-width:28px; }
+  .btn-comment.status-ok{ border-color:var(--match); color:var(--match); }
+  .btn-comment.status-pendiente{ border-color:var(--accent-2); color:var(--accent-2); }
+  .btn-comment.status-dudoso{ border-color:var(--conflict); color:var(--conflict); }
+
+  td.conflict-cell{
+    background: var(--conflict-bg); color: var(--conflict); font-weight:600; cursor:pointer;
+    position:relative;
+  }
+  td.conflict-cell:hover::after{
+    content: attr(data-tooltip);
+    position:absolute; left:0; top:100%; z-index:10;
+    background: var(--text); border:1px solid var(--conflict); color: #f0a99a;
+    padding:6px 10px; border-radius:3px; font-size:11px; font-family:var(--mono);
+    white-space:normal; min-width:200px; box-shadow: 0 4px 12px rgba(43,40,32,0.25);
+  }
+  td.empty-cell{ color: var(--text-dim); font-style:italic; }
+  td.resolved-cell{ background: rgba(74,138,111,0.12); color: var(--match); font-weight:600; }
+  td.edited-cell{ background: rgba(173,122,53,0.10); color: var(--accent-2); font-weight:600; cursor:pointer; }
+  td.format-warning-cell{
+    border-bottom: 2px dotted var(--accent-2); cursor:pointer; position:relative;
+  }
+  td.format-warning-cell:hover::after{
+    content: attr(data-tooltip);
+    position:absolute; left:0; top:100%; z-index:10;
+    background: var(--text); border:1px solid var(--accent-2); color: #e3bd84;
+    padding:6px 10px; border-radius:3px; font-size:11px; font-family:var(--mono);
+    white-space:normal; min-width:200px; box-shadow: 0 4px 12px rgba(43,40,32,0.25);
+  }
+  td[data-col]:not(.conflict-cell):not(.resolved-cell):not(.edited-cell):not(.format-warning-cell){ cursor:text; }
+  .conflict-value, .resolved-value{ cursor:pointer; }
+  .conflict-value:hover, .resolved-value:hover{ text-decoration: underline; }
+  select.conflict-picker, input.conflict-picker{
+    width:100%; max-width:260px; font-size:12px; padding:4px 6px;
+  }
+  .sheets-import{ margin-top:14px; }
+  .sheets-import-label{ font-family:var(--mono); font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:8px; }
+  .sheets-import-row{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .sheets-import-row input{ flex:1; min-width:180px; }
+
+  /* Source color chips */
+  .source-chips{ display:flex; gap:4px; flex-wrap:wrap; }
+  .source-chip{
+    font-family:var(--mono); font-size:9px; font-weight:700;
+    padding:2px 6px; border-radius:3px; letter-spacing:0.04em;
+    color:#fff; white-space:nowrap; max-width:90px;
+    overflow:hidden; text-overflow:ellipsis;
+  }
+  td.sources-cell{ white-space:normal; }
+
+  .export-row{ display:flex; gap:10px; margin-top:18px; }
+
+  .hidden{ display:none !important; }
+  .small-note{ font-size:11px; color:var(--text-dim); margin-top:8px; line-height:1.6; }
+  .small-note code{ font-family:var(--mono); background:var(--panel-2); padding:1px 5px; border-radius:4px; }
+
+  /* Subsections inside step 2 */
+  .panel-subsection{ border-top:1px solid var(--border); margin-top:18px; padding-top:18px; }
+  .panel-subsection h3{ font-size:13px; font-weight:600; margin-bottom:8px; }
+  .panel-subsection .desc{ font-size:12px; margin-bottom:12px; }
+  .settings-row{ display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+
+  /* Column unification */
+  .colunify-source{ margin-bottom:12px; }
+  .colunify-source-name{ font-family:var(--mono); font-size:11px; color:var(--text-dim); margin-bottom:6px; }
+  .colunify-row{
+    display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:3px;
+    background: var(--panel-2); border:1px solid var(--border); margin-bottom:6px; flex-wrap:wrap;
+  }
+  .colunify-row.matched{ border-color: rgba(74,138,111,0.35); }
+  .colunify-orig{ font-size:12.5px; min-width:140px; }
+  .colunify-input{ min-width:160px; flex:1; }
+  .colunify-tag{
+    font-family: var(--mono); font-size:10px; color: var(--match);
+    border:1px solid var(--match); border-radius:3px; padding:2px 8px; white-space:nowrap;
+  }
+
+  /* Candidate review cards */
+  .candidate-card{
+    background: var(--panel-2); border:1px solid var(--border); border-radius:4px;
+    padding:14px; margin-bottom:12px;
+  }
+  .candidate-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:10px; }
+  .candidate-head .badge{
+    font-family: var(--mono); font-size:11px; font-weight:700;
+    border-radius:4px; padding:2px 8px;
+  }
+  .candidate-reasons{ font-size:12px; color:var(--text-dim); }
+  .candidate-body{ display:flex; gap:14px; align-items:stretch; flex-wrap:wrap; }
+  .candidate-record{
+    flex:1; min-width:220px; background: var(--bg); border:1px solid var(--border);
+    border-radius:4px; padding:10px 12px;
+  }
+  .candidate-source{ font-family:var(--mono); font-size:10px; color:var(--accent); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.04em; }
+  .candidate-field{ font-size:12.5px; line-height:1.6; }
+  .candidate-field .k{ color:var(--text-dim); }
+  .candidate-body .vs{ align-self:center; color:var(--text-dim); font-family:var(--mono); font-size:13px; }
+  .candidate-relations{ display:flex; flex-direction:column; gap:6px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+  .candidate-relation{ flex-wrap:wrap; }
+  .candidate-relation .badge{ font-weight:700; }
+
+  footer{ text-align:center; padding: 18px; font-size:11px; color:var(--text-dim); font-family: var(--mono); }
+
+  /* Loading overlay */
+  .loading-overlay{
+    position:fixed; inset:0; z-index:1000;
+    background: rgba(43,40,32,0.35);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .loading-box{
+    background: var(--panel); border:1px solid var(--border); border-top:5px solid var(--accent);
+    border-radius: 3px 3px 8px 8px; padding: 28px 36px;
+    display:flex; flex-direction:column; align-items:center; gap:14px;
+  }
+  .loading-spinner{
+    width:28px; height:28px; border-radius:50%;
+    border:3px solid var(--border); border-top-color: var(--accent);
+    animation: spin 0.8s linear infinite;
+  }
+  .loading-msg{ font-family: var(--mono); font-size:12px; color: var(--text-dim); }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="loading-overlay hidden" id="loadingOverlay">
+    <div class="loading-box">
+      <div class="loading-spinner"></div>
+      <div class="loading-msg" id="loadingMsg">Procesando…</div>
+    </div>
+  </div>
+  <header>
+    <div class="brand">
+      <span class="mark">DB·MERGE</span>
+      <div>
+        <h1>Fusión y depuración de registros</h1>
+        <div class="sub">Cargá bases, definí coincidencias, obtené un perfil único por persona</div>
+      </div>
+    </div>
+    <div class="steps">
+      <span class="step active" data-step="1">1 · Cargar</span>
+      <span class="step" data-step="2">2 · Coincidencias</span>
+      <span class="step" data-step="3">3 · Revisión</span>
+      <span class="step" data-step="4">4 · Resultado</span>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- STEP 1: UPLOAD -->
+    <section class="panel" id="panel-upload">
+      <h2>1. Cargar bases de datos</h2>
+      <div class="desc">Subí archivos .xlsx, .csv o .json. Cada archivo se trata como una fuente distinta.</div>
+
+      <div class="dropzone" id="dropzone">
+        <div class="icon">⇪</div>
+        <div class="main-txt">Arrastrá tus archivos aquí o hacé click para elegir</div>
+        <div class="sub-txt">Formatos soportados: .xlsx · .xls · .csv · .json</div>
+        <input type="file" id="fileInput" multiple accept=".xlsx,.xls,.csv,.json">
+      </div>
+
+      <div class="sheets-import">
+        <div class="sheets-import-label">O importar desde Google Sheets</div>
+        <div class="sheets-import-row">
+          <input type="text" id="sheetsUrl" placeholder="Pegá la URL de un Google Sheet público…" autocomplete="off">
+          <input type="text" id="sheetsName" placeholder="Nombre (opcional)" style="max-width:160px;">
+          <button class="secondary" id="btnImportSheets">Importar</button>
+        </div>
+        <div class="small-note" id="sheetsStatus"></div>
+      </div>
+
+      <div class="file-list" id="fileList"></div>
+
+      <div class="actions-row">
+        <button class="primary" id="btnLoadDemo" >Cargar datos de prueba</button>
+        <button class="primary hidden" id="btnAutoAnalyze" disabled>⚡ Analizar todo automáticamente →</button>
+        <button class="secondary hidden" id="btnGoMatch" disabled>Ajustar coincidencias manualmente →</button>
+        <button class="secondary" id="btnImportProjectTrigger">📂 Abrir proyecto guardado</button>
+        <input type="file" id="projectFileInput" accept=".json" class="hidden">
+      </div>
+      <div class="small-note">Tip: si no tenés archivos a mano, usá "Cargar datos de prueba" para ver cómo funciona la app con 3 bases de ejemplo (mismas personas repetidas con datos distintos).</div>
+      <div class="small-note">"⚡ Analizar todo automáticamente" detecta las columnas clave (email, teléfono, DNI, nombre, etc.), busca duplicados con la configuración recomendada y te lleva directo al resultado — fusiona automáticamente lo que coincide por email/teléfono/DNI o nombre idéntico. Si después necesitás ajustar algo (otras columnas, sensibilidad, revisar nombres parecidos), podés volver con "← Volver a revisión" o "Ajustar coincidencias manualmente".</div>
+      <div class="small-note">¿Veniás trabajando en esto? "Abrir proyecto guardado" restaura las bases, la configuración, las decisiones de revisión y los cambios manuales tal como quedaron — para retomar donde lo dejaste. El botón para guardar el proyecto está en el paso 4 (Resultado).</div>
+      <div class="small-note" id="projectStatus"></div>
+    </section>
+
+    <!-- STEP 2: MATCH CONFIG -->
+    <section class="panel hidden" id="panel-match">
+      <h2>2. Definir cómo identificar a la misma persona</h2>
+      <div class="desc">Elegí qué columna de cada base corresponde a cada "campo clave". Email, teléfono y DNI/CUIT que coincidan fusionan automáticamente. Las coincidencias por nombre se revisan en el paso siguiente.</div>
+
+      <div id="matchRules"></div>
+
+      <div class="panel-subsection">
+        <h3>Ajustes de coincidencia</h3>
+        <div class="settings-row">
+          <div class="filter-group">
+            <label>Sensibilidad para nombres similares</label>
+            <select id="fuzzyThresholdInput">
+              <option value="100">Solo exactos (desactivar similares)</option>
+              <option value="95">Muy estricta (95%)</option>
+              <option value="85" selected>Recomendada (85%)</option>
+              <option value="75">Permisiva (75%)</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Bonus si coincide la fecha de nacimiento</label>
+            <select id="birthdateBoostInput">
+              <option value="0">No usar</option>
+              <option value="5">+5%</option>
+              <option value="15" selected>+15% (recomendado)</option>
+              <option value="25">+25%</option>
+            </select>
+          </div>
+          <div class="filter-group">
+            <label>Bonus si coincide la ciudad</label>
+            <select id="localityBoostInput">
+              <option value="0">No usar</option>
+              <option value="5" selected>+5% (recomendado)</option>
+              <option value="10">+10%</option>
+              <option value="15">+15%</option>
+            </select>
+          </div>
+          <label class="checkbox-row" style="align-self:flex-end; padding-bottom:7px;">
+            <input type="checkbox" id="chkCombineMultiValue" checked>
+            <span>Combinar emails / teléfonos distintos en una sola celda en vez de marcarlos como conflicto</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel-subsection">
+        <h3>Unificar columnas (opcional)</h3>
+        <div class="desc">Si dos bases nombran lo mismo de forma distinta (ej. "Teléfono" en una y "Celular" en otra), escribí el mismo nombre en ambas para que se combinen en una sola columna del resultado.</div>
+        <div id="columnUnification"></div>
+      </div>
+
+      <div class="panel-subsection">
+        <h3>Guardar / cargar configuración</h3>
+        <div class="desc">Si vas a procesar bases parecidas seguido (mismas columnas), guardá esta configuración para no repetir los pasos la próxima vez.</div>
+        <div class="actions-row" style="margin-top:0;">
+          <button class="secondary" id="btnExportConfig">💾 Descargar configuración</button>
+          <button class="secondary" id="btnImportConfigTrigger">📂 Cargar configuración</button>
+          <input type="file" id="configFileInput" accept=".json" class="hidden">
+        </div>
+        <div class="small-note" id="configStatus"></div>
+      </div>
+
+      <div class="actions-row">
+        <button class="secondary" id="btnBackUpload">← Volver</button>
+        <button class="primary" id="btnRunMerge">Analizar coincidencias →</button>
+      </div>
+      <div class="small-note">
+        Email, teléfono y DNI/CUIT coinciden automáticamente (con o sin formato/código de país).
+        Las coincidencias por nombre (exactas o similares) se muestran en el paso de revisión para que confirmes cuáles fusionar.
+      </div>
+    </section>
+
+    <!-- STEP 3: REVIEW -->
+    <section class="panel hidden" id="panel-review">
+      <h2>3. Revisar posibles coincidencias</h2>
+      <div class="desc">Estos registros parecen ser la misma persona por su nombre (y, en algunos casos, fecha de nacimiento o ciudad), pero no comparten email/teléfono/DNI. Cada tarjeta agrupa todos los registros que podrían ser la misma persona; marcá qué pares fusionar.</div>
+      <div id="analysisPerformanceStat" style="margin-bottom:10px;"></div>
+
+      <div id="candidatesList"></div>
+
+      <div class="actions-row">
+        <button class="secondary" id="btnBackReview">← Ajustar coincidencias</button>
+        <button class="primary" id="btnContinueToResults">Continuar al resultado →</button>
+      </div>
+    </section>
+
+    <!-- STEP 3: RESULTS -->
+    <section class="panel hidden" id="panel-results">
+      <h2>4. Resultado fusionado</h2>
+      <div class="desc">Tabla unificada. Las celdas en <span style="color:var(--conflict); font-weight:600;">rojo</span> indican conflictos entre bases (pasá el mouse para ver los valores originales).</div>
+
+      <div class="stats-row" id="statsRow"></div>
+
+      <div class="analysis-panels" id="analysisPanels"></div>
+
+      <div class="search-bar">
+        <div class="search-input-wrap">
+          <span class="search-icon">🔎</span>
+          <input type="text" id="globalSearch" placeholder="Buscar en todas las columnas..." autocomplete="off">
+          <span class="search-count" id="searchCount"></span>
+          <button class="search-nav" id="searchPrev" title="Anterior (Shift+Enter)">↑</button>
+          <button class="search-nav" id="searchNext" title="Siguiente (Enter)">↓</button>
+          <button class="search-clear hidden" id="searchClear" title="Limpiar búsqueda">✕</button>
+        </div>
+      </div>
+
+      <div class="filter-bar" id="filterBar"></div>
+      <div class="filter-options-row">
+        <div class="filter-group">
+          <label>Combinar filtros con</label>
+          <select id="filterCombineMode">
+            <option value="AND">Y (deben cumplirse todos)</option>
+            <option value="OR">O (alcanza con uno)</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>&nbsp;</label>
+          <button class="secondary" id="btnSaveView">💾 Guardar vista actual</button>
+        </div>
+      </div>
+      <div class="active-filters" id="activeFilters"></div>
+      <div class="saved-views" id="savedViews"></div>
+      <div class="manual-edit-bar" id="manualEditBar"></div>
+      <div class="manual-edit-bar" id="undoRedoBar"></div>
+
+      <div class="table-wrap">
+        <table id="resultTable">
+          <thead><tr id="tableHead"></tr></thead>
+          <tbody id="tableBody"></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+
+      <div class="panel-subsection">
+        <h3>Configurar exportación</h3>
+        <div class="desc">Elegí qué columnas exportar y en qué orden (arrastrá para reordenar). El ID y las Fuentes siempre se incluyen.</div>
+        <div id="exportColumnsList" class="export-columns-list"></div>
+        <div class="settings-row" style="margin-top:12px;">
+          <div class="filter-group">
+            <label>Base de referencia (para "exportar solo nuevos")</label>
+            <select id="referenceSourceSelect">
+              <option value="">— ninguna —</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="export-row">
+        <button class="primary" id="btnExportCsv">Exportar CSV</button>
+        <button class="primary" id="btnExportXlsx">Exportar Excel</button>
+        <button class="secondary" id="btnExportNew">Exportar solo nuevos</button>
+        <button class="secondary" id="btnExportAudit">Exportar auditoría de fusión</button>
+        <button class="secondary" id="btnExportProject">💾 Guardar proyecto</button>
+        <button class="secondary" id="btnBackMatch">← Volver a revisión</button>
+      </div>
+      <div class="small-note">"Guardar proyecto" descarga un archivo con todo el estado actual (bases cargadas, configuración, decisiones de revisión, fusiones y ediciones manuales) para retomarlo después con "Abrir proyecto guardado" en el paso 1.</div>
+      <div class="small-note">"Exportar solo nuevos" exporta las personas cuyas fuentes NO incluyen la base de referencia elegida arriba (útil para actualizar un sistema existente con los registros que faltan). La auditoría detalla, para cada persona del resultado, qué fila de qué base se usó y por qué regla se fusionó (email, teléfono, DNI, nombre confirmado en revisión, o fusión manual).</div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: Comparación lado a lado -->
+  <div class="modal-overlay hidden" id="compareModal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <span class="modal-title">Comparar registros</span>
+        <button class="modal-close" id="compareClose">✕</button>
+      </div>
+      <div class="modal-desc">Seleccioná exactamente 2 filas en la tabla (tildando los checkboxes) y abrí esta vista para compararlas columna por columna.</div>
+      <div id="compareBody"></div>
+      <div class="modal-actions">
+        <button class="primary" id="compareMergeBtn">Fusionar estas dos filas</button>
+        <button class="secondary" id="compareClose2">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>Procesamiento 100% local — los archivos no se suben a ningún servidor.</footer>
+</div>
+
+<script>
+/* ============================================================
+   ESTADO GLOBAL
+============================================================ */
+let sources = []; // [{ name, ext, rows: [obj,...], columns: [..] }]
+let matchRules = []; // [{ id, label, mappings: {sourceIdx: columnName|null}, active: bool, type:'text'|'date'|'number'|'phone'|'dni' }]
+let mergedData = []; // resultado fusionado
+let mergedColumns = []; // lista de columnas finales
+let conflictsMap = {}; // {rowIndex: {col: [values...]}}
+let activeFilters = []; // [{column, operator, value}]
+let filterCombineMode = 'AND'; // 'AND' | 'OR'
+let globalSearchTerm = ''; // búsqueda libre en todas las columnas
+let savedViews = []; // [{name, filters, combineMode, search}] (en memoria, dura la sesión)
+let sortState = { col: null, dir: 1 };
+
+let columnOverrides = {}; // `${sourceIdx}::${columna original}` -> nombre unificado elegido por el usuario
+let combineMultiValue = true; // combinar emails/telefonos distintos en vez de marcar conflicto
+let fuzzyThreshold = 0.85; // umbral de similitud (0-1) para considerar nombres "parecidos"
+let birthdateBoost = 0.15; // bonus de confianza si dos nombres parecidos comparten fecha de nacimiento
+let localityBoost = 0.05; // bonus de confianza si dos nombres parecidos comparten ciudad
+let allRowsGlobal = []; // todas las filas de todas las fuentes, con metadata {data, sourceIdx, sourceName}
+let strongClusters = []; // grupos auto-fusionados por email/telefono/dni: array de arrays de índices en allRowsGlobal
+let candidatePairs = []; // posibles coincidencias por nombre/fecha que requieren revisión
+let pairDecisions = {}; // {candidateId: bool} si el usuario confirma la fusión
+let candidatesShowAll = false; // si hay muchos candidatos, por defecto se muestran solo los primeros
+let lastAnalysisStats = null; // estadísticas del último análisis (para mostrar en el paso 3)
+
+let mergedClusters = []; // array de arrays de filas crudas {data, sourceIdx, sourceName}, una por persona del resultado
+let mergedColInfo = {}; // columna normalizada -> {type, field} (para combinar/comparar valores)
+let confirmedMatchesCount = 0; // cantidad de fusiones por nombre confirmadas en la revisión
+let selectedRowIds = new Set(); // __id de filas tildadas en el resultado, para fusión manual
+let conflictResolutions = {}; // {__id: {columna: valor elegido manualmente}}
+let pageSize = 50; // filas por página en el resultado
+let currentPage = 1;
+let expandedRowIds = new Set(); // __id de filas con el detalle "antes/después" abierto
+let exportColumns = []; // columnas a exportar, en el orden elegido por el usuario
+let exportColumnEnabled = {}; // columna -> bool (se incluye en la exportación)
+let referenceSourceName = ''; // base de referencia para "exportar solo nuevos"
+let mergedRowToStrongCluster = {}; // idx en allRowsGlobal -> índice de cluster fuerte (email/telefono/dni)
+let confirmedPairLinkSet = new Set(); // "ciA_ciB" de pares de clusters fuertes confirmados en la revisión
+
+// ── Historial de cambios (undo/redo) ─────────────────────────────────────────
+let editHistory = [];   // pila de snapshots {conflictResolutions, mergedClusters, mergedData, cellEdits}
+let editFuture  = [];   // pila para redo
+let cellEdits   = {};   // {`${__id}::${col}`: valor libre escrito por el usuario}
+
+// ── Comentarios y estado por fila ─────────────────────────────────────────────
+let rowComments = {};   // {__id: string}
+let rowStatus   = {};   // {__id: 'ok'|'pendiente'|'dudoso'}
+
+const KEY_FIELDS = [
+  {key:'nombre', label:'Nombre'},
+  {key:'apellido', label:'Apellido'},
+  {key:'nombre_completo', label:'Nombre completo'},
+  {key:'email', label:'Email'},
+  {key:'telefono', label:'Teléfono'},
+  {key:'dni', label:'DNI / ID'},
+  {key:'fecha_nacimiento', label:'Fecha de nacimiento'},
+];
+
+/* ============================================================
+   HELPERS
+============================================================ */
+function normalizeStr(v){
+  if(v===null || v===undefined) return '';
+  return String(v).trim().toLowerCase().replace(/\s+/g,' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+}
+function normalizePhone(v){
+  if(v===null || v===undefined) return '';
+  return String(v).replace(/[^0-9]/g,'');
+}
+function getPhoneKeys(v){
+  const digits = normalizePhone(v);
+  const keys = [];
+  if(digits.length>=6) keys.push(digits);
+  // también clave por los últimos 8 dígitos, para que números con/sin código de país (54 9 11...) igual matcheen
+  if(digits.length>8) keys.push(digits.slice(-8));
+  return keys;
+}
+function normalizeDNI(v){
+  if(v===null || v===undefined) return '';
+  return String(v).replace(/[^0-9]/g,'');
+}
+function getDNIKeys(v){
+  const digits = normalizeDNI(v);
+  const keys = [];
+  if(digits.length>=6) keys.push(digits);
+  // CUIT/CUIL (11 dígitos, "XX-DNI-X") contiene el DNI en los 8 dígitos del medio
+  if(digits.length===11) keys.push(digits.slice(2,10));
+  return keys;
+}
+function pad2(n){ return String(n).padStart(2,'0'); }
+function normalizeDate(v){
+  if(v===null || v===undefined || v==='') return '';
+  if(v instanceof Date && !isNaN(v.getTime())) return v.toISOString().slice(0,10);
+  const raw = String(v).trim();
+  // Fecha serial de Excel (numérica, rango plausible ~1903-2064)
+  if(/^\d+(\.\d+)?$/.test(raw)){
+    const num = parseFloat(raw);
+    if(num > 1000 && num < 60000){
+      const d = new Date(Math.round((num - 25569) * 86400 * 1000));
+      if(!isNaN(d.getTime())) return d.toISOString().slice(0,10);
+    }
+  }
+  // YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD
+  let m = raw.match(/^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/);
+  if(m) return `${m[1]}-${pad2(m[2])}-${pad2(m[3])}`;
+  // DD-MM-YYYY / DD/MM/YYYY / DD.MM.YYYY (día primero, convención AR)
+  m = raw.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})$/);
+  if(m){
+    let day = parseInt(m[1],10), month = parseInt(m[2],10);
+    if(month>12 && day<=12){ const tmp=day; day=month; month=tmp; } // formato MM/DD detectado
+    if(month>=1 && month<=12 && day>=1 && day<=31) return `${m[3]}-${pad2(month)}-${pad2(day)}`;
+  }
+  // último recurso: dejar que el motor de fechas de JS lo intente
+  const d2 = new Date(raw);
+  if(!isNaN(d2.getTime())) return d2.toISOString().slice(0,10);
+  return normalizeStr(raw);
+}
+function isEmpty(v){
+  return v===null || v===undefined || String(v).trim()==='';
+}
+function uniq(arr){ return [...new Set(arr)]; }
+
+/* ============================================================
+   SIMILITUD DE TEXTO (para nombres parecidos)
+============================================================ */
+function levenshtein(a,b){
+  const m=a.length, n=b.length;
+  if(m===0) return n;
+  if(n===0) return m;
+  let prev = new Array(n+1), curr = new Array(n+1);
+  for(let j=0;j<=n;j++) prev[j]=j;
+  for(let i=1;i<=m;i++){
+    curr[0]=i;
+    for(let j=1;j<=n;j++){
+      const cost = a[i-1]===b[j-1] ? 0 : 1;
+      curr[j] = Math.min(prev[j]+1, curr[j-1]+1, prev[j-1]+cost);
+    }
+    [prev,curr]=[curr,prev];
+  }
+  return prev[n];
+}
+function nameSimilarity(a,b){
+  if(!a || !b) return 0;
+  if(a===b) return 1;
+  const dist = levenshtein(a,b);
+  const maxLen = Math.max(a.length,b.length);
+  if(maxLen===0) return 1;
+  return 1 - dist/maxLen;
+}
+
+/* ============================================================
+   SEÑALES POR FILA: nombre completo, fecha de nacimiento, claves fuertes
+============================================================ */
+// Devuelve el nombre completo normalizado (palabras ordenadas alfabéticamente),
+// combinando "Nombre"+"Apellido" o usando "Nombre y Apellido" si está disponible.
+// También detecta el formato invertido "Apellido, Nombre" (con coma).
+function buildFullName(row, sourceIdx){
+  const ruleNombre = matchRules.find(r=>r.id==='nombre');
+  const ruleApellido = matchRules.find(r=>r.id==='apellido');
+  const ruleCompleto = matchRules.find(r=>r.id==='nombre_completo');
+  let fullName = null;
+  if(ruleCompleto && ruleCompleto.active){
+    const col = ruleCompleto.mappings[sourceIdx];
+    if(col && !isEmpty(row[col])){
+      let v = normalizeStr(row[col]);
+      // detectar formato "Apellido, Nombre" — si hay una coma, invertir el orden
+      if(v.includes(',')){
+        const parts = v.split(',').map(p=>p.trim()).filter(Boolean);
+        if(parts.length===2) v = parts[1] + ' ' + parts[0]; // "García, Ana" → "Ana García"
+      }
+      fullName = v;
+    }
+  }
+  if(!fullName && ruleNombre && ruleApellido && ruleNombre.active && ruleApellido.active){
+    const colN = ruleNombre.mappings[sourceIdx];
+    const colA = ruleApellido.mappings[sourceIdx];
+    if(colN && colA && !isEmpty(row[colN]) && !isEmpty(row[colA])){
+      let nombre = normalizeStr(row[colN]);
+      let apellido = normalizeStr(row[colA]);
+      // detectar si alguno de los dos viene como "Apellido, Nombre"
+      if(nombre.includes(',')){ const p=nombre.split(',').map(s=>s.trim()); if(p.length===2) nombre=p[1]+' '+p[0]; }
+      if(apellido.includes(',')){ const p=apellido.split(',').map(s=>s.trim()); if(p.length===2) apellido=p[1]+' '+p[0]; }
+      fullName = nombre + ' ' + apellido;
+    }
+  }
+  if(!fullName) return null;
+  // tratar guiones como espacios (apellidos compuestos: "Pérez-García" ~ "Perez Garcia")
+  // y descartar conectores sueltos ("y"/"e") que no son parte del nombre
+  const words = fullName.replace(/-/g,' ').split(' ').filter(w=> w && w!=='y' && w!=='e');
+  if(words.length===0) return null;
+  return words.sort().join(' ');
+}
+
+// Fecha de nacimiento normalizada (YYYY-MM-DD) si la regla está activa y mapeada.
+function getFechaNacimiento(row, sourceIdx){
+  const rule = matchRules.find(r=>r.id==='fecha_nacimiento');
+  if(!rule || !rule.active) return null;
+  const col = rule.mappings[sourceIdx];
+  if(!col || isEmpty(row[col])) return null;
+  return normalizeDate(row[col]) || null;
+}
+
+// Claves de "identidad fuerte": email, teléfono, DNI/CUIT. Si coinciden, se fusiona automáticamente.
+function getStrongKeys(row, sourceIdx){
+  const keys = [];
+  matchRules.forEach(rule=>{
+    if(!rule.active) return;
+    if(!['email','telefono','dni'].includes(rule.id)) return;
+    const col = rule.mappings[sourceIdx];
+    if(!col) return;
+    const val = row[col];
+    if(isEmpty(val)) return;
+    if(rule.id==='telefono'){
+      getPhoneKeys(val).forEach(k=> keys.push(rule.id+'::'+k));
+    } else if(rule.id==='dni'){
+      getDNIKeys(val).forEach(k=> keys.push(rule.id+'::'+k));
+    } else {
+      const norm = normalizeStr(val);
+      if(norm!=='') keys.push(rule.id+'::'+norm);
+    }
+  });
+  return keys;
+}
+
+/* ============================================================
+   LOCALIDADES: alias comunes (CABA = Capital Federal = Buenos Aires, etc.)
+============================================================ */
+const LOCALITY_ALIASES = {
+  'caba': 'buenos aires',
+  'capital federal': 'buenos aires',
+  'cap fed': 'buenos aires',
+  'capfed': 'buenos aires',
+  'ciudad autonoma de buenos aires': 'buenos aires',
+  'ciudad de buenos aires': 'buenos aires',
+  'c a b a': 'buenos aires',
+  'bs as': 'buenos aires',
+  'bsas': 'buenos aires',
+  'bs.as': 'buenos aires',
+  'cordoba capital': 'cordoba',
+  'ciudad de cordoba': 'cordoba',
+  'cba': 'cordoba',
+  'rosario santa fe': 'rosario',
+  'mza': 'mendoza',
+  'ciudad de mendoza': 'mendoza',
+  'tucuman capital': 'tucuman',
+  'san miguel de tucuman': 'tucuman',
+  'la plata bs as': 'la plata',
+};
+// Columnas que probablemente representen una localidad/ciudad
+const LOCALITY_COLUMN_HINTS = ['ciudad','localidad','city','poblacion'];
+function isLocalityColumn(normColName){
+  return !!normColName && LOCALITY_COLUMN_HINTS.some(h=> normColName.includes(h));
+}
+function normalizeLocality(v){
+  if(isEmpty(v)) return '';
+  const norm = normalizeStr(v).replace(/[.,]/g,'').replace(/\s+/g,' ').trim();
+  return LOCALITY_ALIASES[norm] || norm;
+}
+// Busca la primera columna tipo "ciudad/localidad" en la fila y devuelve su valor normalizado
+function getLocalityValue(row){
+  for(const col in row){
+    const norm = normalizeStr(col).replace(/[_\s]/g,'');
+    if(isLocalityColumn(norm) && !isEmpty(row[col])){
+      return normalizeLocality(row[col]);
+    }
+  }
+  return null;
+}
+
+/* ============================================================
+   VALIDACIÓN DE FORMATO (email / teléfono / DNI con pinta rara)
+============================================================ */
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function checkFormatWarning(value, field){
+  if(isEmpty(value)) return null;
+  const parts = String(value).split('/').map(s=>s.trim()).filter(Boolean);
+  if(field==='email'){
+    const bad = parts.filter(p=> !EMAIL_RE.test(p));
+    if(bad.length) return `Formato de email inusual: ${bad.join(', ')}`;
+  } else if(field==='telefono'){
+    const bad = parts.filter(p=>{ const d=normalizePhone(p); return d.length<8 || d.length>13; });
+    if(bad.length) return `Teléfono con cantidad de dígitos inusual: ${bad.join(', ')}`;
+  } else if(field==='dni'){
+    const bad = parts.filter(p=>{ const d=normalizeDNI(p); return d.length<6 || d.length>11; });
+    if(bad.length) return `DNI/CUIT con cantidad de dígitos inusual: ${bad.join(', ')}`;
+  }
+  return null;
+}
+
+
+
+/* ============================================================
+   STEP NAV
+============================================================ */
+function showPanel(step){
+  document.getElementById('panel-upload').classList.toggle('hidden', step!==1);
+  document.getElementById('panel-match').classList.toggle('hidden', step!==2);
+  document.getElementById('panel-review').classList.toggle('hidden', step!==3);
+  document.getElementById('panel-results').classList.toggle('hidden', step!==4);
+  document.querySelectorAll('.step').forEach(el=>{
+    const s = parseInt(el.dataset.step);
+    el.classList.toggle('active', s===step);
+    el.classList.toggle('done', s<step);
+  });
+}
+
+/* ============================================================
+   FILE LOADING
+============================================================ */
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('fileInput');
+const fileListEl = document.getElementById('fileList');
+
+dropzone.addEventListener('click', ()=> fileInput.click());
+dropzone.addEventListener('dragover', e=>{ e.preventDefault(); dropzone.classList.add('dragover'); });
+dropzone.addEventListener('dragleave', ()=> dropzone.classList.remove('dragover'));
+dropzone.addEventListener('drop', e=>{
+  e.preventDefault(); dropzone.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', e=> handleFiles(e.target.files));
+
+/* ============================================================
+   LOADING OVERLAY (procesos que pueden tardar con bases grandes)
+============================================================ */
+function showLoading(msg){
+  document.getElementById('loadingMsg').textContent = msg;
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+}
+function hideLoading(){
+  document.getElementById('loadingOverlay').classList.add('hidden');
+}
+// Muestra el overlay, deja pintar el frame, corre fn (sincrónica y pesada), y lo oculta.
+function withLoading(msg, fn){
+  showLoading(msg);
+  return new Promise(resolve=>{
+    setTimeout(()=>{
+      try{ fn(); } finally{ hideLoading(); resolve(); }
+    }, 30);
+  });
+}
+
+async function handleFiles(files){
+  showLoading('Leyendo archivos…');
+  for(const file of files){
+    try{
+      const ext = file.name.split('.').pop().toLowerCase();
+      let rows = [];
+      if(ext==='csv'){
+        const text = await file.text();
+        rows = parseCSV(text);
+      } else if(ext==='json'){
+        const text = await file.text();
+        const json = JSON.parse(text);
+        rows = Array.isArray(json) ? json : (json.data || json.rows || Object.values(json));
+      } else if(ext==='xlsx' || ext==='xls'){
+        const buf = await file.arrayBuffer();
+        const wb = XLSX.read(buf, {type:'array'});
+        // Importar todas las hojas con datos como fuentes separadas
+        const sheetsWithData = wb.SheetNames
+          .map(name=>({ name, rows: XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:null}) }))
+          .filter(s=> s.rows.length>0);
+        if(sheetsWithData.length===0){
+          alert(`"${file.name}" no tiene hojas con datos.`);
+          continue;
+        }
+        sheetsWithData.forEach(s=>{
+          const rows = s.rows.map(r=>{
+            const obj={};
+            for(const k in r) obj[String(k).trim()] = r[k];
+            return obj;
+          });
+          const columns = uniq(rows.flatMap(r=>Object.keys(r)));
+          // si el archivo tiene una sola hoja con datos, no hace falta aclarar el nombre
+          const sourceName = sheetsWithData.length>1 ? `${file.name} — ${s.name}` : file.name;
+          sources.push({ name: sourceName, ext, rows, columns });
+        });
+        continue;
+      } else {
+        alert(`Formato no soportado: ${file.name}`);
+        continue;
+      }
+      rows = rows.map(r=>{
+        const obj={};
+        for(const k in r) obj[String(k).trim()] = r[k];
+        return obj;
+      });
+      const columns = uniq(rows.flatMap(r=>Object.keys(r)));
+      sources.push({ name:file.name, ext, rows, columns });
+    } catch(err){
+      alert(`Error al leer ${file.name}: ${err.message}`);
+    }
+  }
+  renderFileList();
+  hideLoading();
+}
+
+/* ============================================================
+   COLORES POR FUENTE (asignados automáticamente, estables por nombre)
+============================================================ */
+const SOURCE_COLORS = [
+  '#2f6b52','#ad7a35','#4a6fa5','#7b4d8e','#b3402f',
+  '#3a8a7a','#8a6030','#1e5080','#6b3580','#8a2020',
+];
+function getSourceColor(sourceName){
+  let hash = 0;
+  for(let i=0; i<sourceName.length; i++) hash = (hash*31 + sourceName.charCodeAt(i)) & 0xffffffff;
+  return SOURCE_COLORS[Math.abs(hash) % SOURCE_COLORS.length];
+}
+function sourceChip(name){
+  const color = getSourceColor(name);
+  const short = name.replace(/\.[a-z]+$/i,'').slice(0,12);
+  return `<span class="source-chip" style="background:${color};" title="${escHtml(name)}">${escHtml(short)}</span>`;
+}
+
+/* ============================================================
+   GOOGLE SHEETS IMPORT
+   Convierte la URL de cualquier sheet público en una URL de CSV
+   usando el endpoint de exportación de Google Sheets.
+============================================================ */
+document.getElementById('btnImportSheets').addEventListener('click', ()=> importGoogleSheet());
+
+async function importGoogleSheet(){
+  const raw = document.getElementById('sheetsUrl').value.trim();
+  const nameInput = document.getElementById('sheetsName').value.trim();
+  const status = document.getElementById('sheetsStatus');
+  if(!raw){ status.textContent = 'Pegá una URL de Google Sheets primero.'; return; }
+
+  // Extraer el ID del spreadsheet de cualquier variante de URL de Google Sheets
+  const idMatch = raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if(!idMatch){ status.textContent = 'No se reconoce como URL de Google Sheets. Asegurate de que sea un link del tipo docs.google.com/spreadsheets/...'; return; }
+  const sheetId = idMatch[1];
+
+  // Intentar detectar el gid (hoja específica) si está en la URL
+  const gidMatch = raw.match(/[#&?]gid=([0-9]+)/);
+  const gid = gidMatch ? gidMatch[1] : '0';
+
+  const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv&gid=${gid}`;
+  status.textContent = 'Descargando…';
+
+  showLoading('Importando Google Sheet…');
+  try{
+    const res = await fetch(csvUrl);
+    if(!res.ok) throw new Error(`Error ${res.status} — ¿el Sheet es público?`);
+    const text = await res.text();
+    const rows = parseCSV(text);
+    if(rows.length===0) throw new Error('El sheet parece estar vacío.');
+    const columns = uniq(rows.flatMap(r=>Object.keys(r)));
+    const name = nameInput || `Google Sheet (gid ${gid})`;
+    sources.push({ name, ext:'csv', rows, columns });
+    renderFileList();
+    status.textContent = `✓ Importado: ${rows.length} filas, ${columns.length} columnas.`;
+    document.getElementById('sheetsUrl').value = '';
+    document.getElementById('sheetsName').value = '';
+  } catch(err){
+    status.textContent = `Error: ${err.message}`;
+  } finally {
+    hideLoading();
+  }
+}
+
+
+function parseCSV(text){
+  // simple but robust CSV parser handling quotes
+  const rows = [];
+  let i=0, field='', row=[], inQuotes=false;
+  while(i < text.length){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field+='"'; i++; }
+        else inQuotes=false;
+      } else field += c;
+    } else {
+      if(c === '"') inQuotes = true;
+      else if(c === ','){ row.push(field); field=''; }
+      else if(c === '\n' || c === '\r'){
+        if(field!=='' || row.length>0){ row.push(field); rows.push(row); row=[]; field=''; }
+        if(c==='\r' && text[i+1]==='\n') i++;
+      } else field += c;
+    }
+    i++;
+  }
+  if(field!=='' || row.length>0){ row.push(field); rows.push(row); }
+  if(rows.length===0) return [];
+  const headers = rows[0].map(h=>h.trim());
+  return rows.slice(1).filter(r=>r.some(c=>c!=='')).map(r=>{
+    const obj={};
+    headers.forEach((h,idx)=> obj[h] = r[idx]!==undefined ? r[idx] : null);
+    return obj;
+  });
+}
+
+function renderFileList(){
+  fileListEl.innerHTML = '';
+  sources.forEach((s, idx)=>{
+    const div = document.createElement('div');
+    div.className='file-item';
+    div.innerHTML = `
+      <div class="info">
+        <span class="ext">${s.ext}</span>
+        <div>
+          <div class="name">${s.name}</div>
+          <div class="meta">${s.rows.length} filas · ${s.columns.length} columnas</div>
+        </div>
+      </div>
+      <button class="remove" data-idx="${idx}" title="Quitar">✕</button>
+    `;
+    fileListEl.appendChild(div);
+  });
+  fileListEl.querySelectorAll('.remove').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      sources.splice(parseInt(e.target.dataset.idx),1);
+      renderFileList();
+    });
+  });
+  const btnGo = document.getElementById('btnGoMatch');
+  btnGo.classList.toggle('hidden', sources.length<1);
+  btnGo.disabled = sources.length<1;
+  const btnAuto = document.getElementById('btnAutoAnalyze');
+  btnAuto.classList.toggle('hidden', sources.length<1);
+  btnAuto.disabled = sources.length<1;
+}
+
+/* DEMO DATA */
+document.getElementById('btnLoadDemo').addEventListener('click', ()=>{
+  sources = [];
+  sources.push({
+    name:'crm_clientes.csv', ext:'csv',
+    rows:[
+      {Nombre:'Ana', Apellido:'García', Email:'ana.garcia@mail.com', Telefono:'1145678901', Edad:29, Genero:'F', Ciudad:'Buenos Aires'},
+      {Nombre:'Luis', Apellido:'Pérez', Email:'luis.perez@mail.com', Telefono:'1133344455', Edad:34, Genero:'M', Ciudad:'Córdoba'},
+      {Nombre:'María', Apellido:'Lopez', Email:'maria.lopez@mail.com', Telefono:'1122233344', Edad:41, Genero:'F', Ciudad:'Rosario'},
+      {Nombre:'Carlos', Apellido:'Ramirez', Email:'carlos.r@mail.com', Telefono:'1199988877', Edad:25, Genero:'M', Ciudad:'Mendoza'},
+    ],
+    columns:['Nombre','Apellido','Email','Telefono','Edad','Genero','Ciudad']
+  });
+  sources.push({
+    name:'newsletter_subs.json', ext:'json',
+    rows:[
+      {nombre:'Ana', apellido:'García', mail:'ana.garcia@mail.com', actividad:'Yoga', suscripto:'2023-05-01'},
+      {nombre:'Luis', apellido:'Pérez', mail:'luis.perez@mail.com', actividad:'Running', suscripto:'2022-11-12'},
+      {nombre:'Pedro', apellido:'Suarez', mail:'pedro.suarez@mail.com', actividad:'Natación', suscripto:'2024-01-20'},
+      {nombre:'María', apellido:'Lopez', mail:'maria.lopez99@mail.com', actividad:'Yoga', suscripto:'2023-08-15'},
+    ],
+    columns:['nombre','apellido','mail','actividad','suscripto']
+  });
+  sources.push({
+    name:'eventos_2024.xlsx', ext:'xlsx',
+    rows:[
+      {'Nombre y Apellido':'Ana García', 'Edad':30, 'DNI':'30111222', 'Ciudad':'CABA', 'Evento':'Conferencia Tech'},
+      {'Nombre y Apellido':'Luis Pérez', 'Edad':34, 'DNI':'28555666', 'Ciudad':'Córdoba', 'Evento':'Taller Marketing'},
+      {'Nombre y Apellido':'Carlos Ramirez', 'Edad':25, 'DNI':'35777888', 'Ciudad':'Mendoza', 'Evento':'Conferencia Tech'},
+      {'Nombre y Apellido':'Sofía Torres', 'Edad':22, 'DNI':'40222333', 'Ciudad':'La Plata', 'Evento':'Taller Marketing'},
+    ],
+    columns:['Nombre y Apellido','Edad','DNI','Ciudad','Evento']
+  });
+  renderFileList();
+});
+
+/* ============================================================
+   STEP 2: MATCH RULES UI
+============================================================ */
+document.getElementById('btnGoMatch').addEventListener('click', ()=>{
+  buildMatchRules();
+  renderColumnUnification();
+  showPanel(2);
+});
+
+// "Analizar todo automáticamente": detecta columnas clave, corre el análisis y la
+// fusión con la configuración recomendada (sin pasar por los pasos 2 y 3 a mano),
+// y va directo al resultado. El usuario puede volver atrás para ajustar si hace falta.
+document.getElementById('btnAutoAnalyze').addEventListener('click', ()=>{
+  withLoading('Analizando y fusionando…', ()=>{
+    buildMatchRules();
+    renderColumnUnification();
+    runAnalysis();
+    runMerge();
+    showPanel(4);
+  });
+});
+document.getElementById('btnBackUpload').addEventListener('click', ()=> showPanel(1));
+document.getElementById('btnBackMatch').addEventListener('click', ()=> showPanel(3));
+document.getElementById('btnBackReview').addEventListener('click', ()=> showPanel(2));
+
+function guessColumn(columns, fieldKey){
+  const norm = c => normalizeStr(c).replace(/[_\s]/g,'');
+  const candidates = {
+    nombre: ['nombre','firstname','name','primernombre'],
+    apellido: ['apellido','lastname','surname'],
+    nombre_completo: ['nombreyapellido','nombrecompleto','fullname','nombreapellido'],
+    email: ['email','mail','correo'],
+    telefono: ['telefono','phone','celular','tel','movil'],
+    dni: ['dni','documento','cedula','cuil','cuit'],
+    fecha_nacimiento: ['fechanacimiento','nacimiento','birthdate','fechadenacimiento','dob'],
+  };
+  const opts = candidates[fieldKey] || [];
+  // 1. exact match (after normalization) — highest priority, avoids false positives
+  for(const col of columns){
+    const c = norm(col);
+    if(opts.includes(c)) return col;
+  }
+  // 2. substring match — only for candidate words of 4+ chars to avoid e.g. "id" matching inside "apellido"
+  for(const col of columns){
+    const c = norm(col);
+    if(opts.some(o=> o.length>=4 && c.includes(o))) return col;
+  }
+  return null;
+}
+
+function computeMatchRules(){
+  matchRules = KEY_FIELDS.map(f=>{
+    const mappings = {};
+    let anyFound = false;
+    sources.forEach((s, idx)=>{
+      const guess = guessColumn(s.columns, f.key);
+      mappings[idx] = guess;
+      if(guess) anyFound = true;
+    });
+    return {
+      id: f.key,
+      label: f.label,
+      mappings,
+      active: anyFound,
+      type: f.key==='fecha_nacimiento' ? 'date' : (f.key==='telefono' ? 'phone' : (f.key==='dni' ? 'dni' : 'text'))
+    };
+  });
+}
+
+function buildMatchRules(){
+  computeMatchRules();
+  renderMatchRulesUI();
+}
+
+function renderMatchRulesUI(){
+  const container = document.getElementById('matchRules');
+  container.innerHTML = '';
+  matchRules.forEach((rule, ruleIdx)=>{
+    const div = document.createElement('div');
+    div.className = 'match-rule';
+    let mappingsHtml = '';
+    sources.forEach((s, sIdx)=>{
+      const options = ['<option value="">— no usar —</option>']
+        .concat(s.columns.map(c=> `<option value="${escAttr(c)}" ${rule.mappings[sIdx]===c?'selected':''}>${escHtml(c)}</option>`));
+      mappingsHtml += `
+        <div class="field-map">
+          <span class="src">${escHtml(s.name)}</span>
+          <span class="arrow">→</span>
+          <select data-rule="${ruleIdx}" data-source="${sIdx}" class="map-select">${options.join('')}</select>
+        </div>`;
+    });
+    div.innerHTML = `
+      <div style="display:flex; align-items:center; gap:10px; width:100%; flex-wrap:wrap;">
+        <label class="checkbox-row" style="min-width:170px;">
+          <input type="checkbox" class="rule-active" data-rule="${ruleIdx}" ${rule.active?'checked':''}>
+          <span class="badge">${rule.label}</span>
+        </label>
+        <div style="display:flex; flex-direction:column; gap:6px; flex:1;">
+          ${mappingsHtml}
+        </div>
+      </div>
+    `;
+    container.appendChild(div);
+  });
+
+  container.querySelectorAll('.rule-active').forEach(cb=>{
+    cb.addEventListener('change', e=>{
+      matchRules[parseInt(e.target.dataset.rule)].active = e.target.checked;
+    });
+  });
+  container.querySelectorAll('.map-select').forEach(sel=>{
+    sel.addEventListener('change', e=>{
+      const r = parseInt(e.target.dataset.rule), s = parseInt(e.target.dataset.source);
+      matchRules[r].mappings[s] = e.target.value || null;
+    });
+  });
+}
+
+function escHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function escAttr(s){ return escHtml(s); }
+
+/* ============================================================
+   UNIFICACIÓN DE COLUMNAS (opcional)
+============================================================ */
+// Nombre "efectivo" de una columna: el que escribió el usuario, o el original si no lo tocó.
+function effectiveColName(sourceIdx, col){
+  return columnOverrides[`${sourceIdx}::${col}`] || col;
+}
+
+// Agrupa todas las columnas (de todas las fuentes) por su nombre normalizado efectivo.
+function computeColumnNormGroups(){
+  const map = {};
+  sources.forEach((s, sIdx)=> s.columns.forEach(col=>{
+    const eff = effectiveColName(sIdx, col);
+    const norm = normalizeStr(eff).replace(/[_\s]/g,'');
+    if(!map[norm]) map[norm] = [];
+    map[norm].push({sourceIdx:sIdx, col});
+  }));
+  return map;
+}
+
+function renderColumnUnification(){
+  const container = document.getElementById('columnUnification');
+  if(sources.length<2){
+    container.innerHTML = `<div class="small-note">Con una sola base no hace falta unificar columnas.</div>`;
+    return;
+  }
+  const groups = computeColumnNormGroups();
+  let html = '';
+  sources.forEach((s, sIdx)=>{
+    html += `<div class="colunify-source"><div class="colunify-source-name">${escHtml(s.name)}</div>`;
+    s.columns.forEach(col=>{
+      const key = `${sIdx}::${col}`;
+      const eff = effectiveColName(sIdx, col);
+      const norm = normalizeStr(eff).replace(/[_\s]/g,'');
+      const group = groups[norm] || [];
+      const sourcesInGroup = uniq(group.map(g=>g.sourceIdx)).length;
+      const matched = sourcesInGroup>1;
+      html += `<div class="colunify-row ${matched?'matched':'orphan'}">
+        <span class="colunify-orig">${escHtml(col)}</span>
+        <span class="arrow">→</span>
+        <input type="text" class="colunify-input" data-key="${escAttr(key)}" value="${escAttr(eff)}">
+        ${matched?`<span class="colunify-tag">unificada con ${sourcesInGroup-1} más</span>`:''}
+      </div>`;
+    });
+    html += `</div>`;
+  });
+  container.innerHTML = html;
+
+  container.querySelectorAll('.colunify-input').forEach(inp=>{
+    inp.addEventListener('change', e=>{
+      const key = e.target.dataset.key;
+      const origCol = key.split('::').slice(1).join('::');
+      const val = e.target.value.trim();
+      if(val==='' || val===origCol) delete columnOverrides[key];
+      else columnOverrides[key] = val;
+      renderColumnUnification();
+    });
+  });
+}
+
+/* ============================================================
+   GUARDAR / CARGAR CONFIGURACIÓN
+============================================================ */
+document.getElementById('btnExportConfig').addEventListener('click', ()=>{
+  const config = {
+    version: 1,
+    matchRules: matchRules.map(r=>({id:r.id, active:r.active, mappings:r.mappings})),
+    columnOverrides,
+    combineMultiValue: document.getElementById('chkCombineMultiValue').checked,
+    fuzzyThreshold: document.getElementById('fuzzyThresholdInput').value,
+    birthdateBoost: document.getElementById('birthdateBoostInput').value,
+    localityBoost: document.getElementById('localityBoostInput').value
+  };
+  downloadBlob(JSON.stringify(config, null, 2), 'config_fusion.json', 'application/json');
+});
+
+document.getElementById('btnImportConfigTrigger').addEventListener('click', ()=>{
+  document.getElementById('configFileInput').click();
+});
+
+document.getElementById('configFileInput').addEventListener('change', async e=>{
+  const file = e.target.files[0];
+  const status = document.getElementById('configStatus');
+  if(!file) return;
+  try{
+    const text = await file.text();
+    const config = JSON.parse(text);
+    status.textContent = applyConfig(config);
+  } catch(err){
+    status.textContent = `Error al leer el archivo: ${err.message}`;
+  }
+  e.target.value = '';
+});
+
+// Aplica una configuración guardada, validando que las columnas referenciadas
+// existan en las bases cargadas actualmente (si no, esa parte se ignora).
+function applyConfig(config){
+  let appliedRules = 0, skippedRefs = 0;
+
+  if(Array.isArray(config.matchRules)){
+    config.matchRules.forEach(saved=>{
+      const rule = matchRules.find(r=>r.id===saved.id);
+      if(!rule) return;
+      rule.active = !!saved.active;
+      appliedRules++;
+      Object.keys(saved.mappings||{}).forEach(sIdxStr=>{
+        const sIdx = parseInt(sIdxStr,10);
+        const colName = saved.mappings[sIdxStr];
+        if(colName===null || colName===undefined){ rule.mappings[sIdx]=null; return; }
+        const s = sources[sIdx];
+        if(s && s.columns.includes(colName)) rule.mappings[sIdx] = colName;
+        else skippedRefs++;
+      });
+    });
+  }
+
+  let appliedOverrides = 0;
+  if(config.columnOverrides && typeof config.columnOverrides==='object'){
+    columnOverrides = {};
+    Object.entries(config.columnOverrides).forEach(([key,val])=>{
+      const parts = key.split('::');
+      const sIdx = parseInt(parts[0],10);
+      const origCol = parts.slice(1).join('::');
+      const s = sources[sIdx];
+      if(s && s.columns.includes(origCol)){ columnOverrides[key]=val; appliedOverrides++; }
+      else skippedRefs++;
+    });
+  }
+
+  if(typeof config.combineMultiValue==='boolean'){
+    document.getElementById('chkCombineMultiValue').checked = config.combineMultiValue;
+  }
+  if(config.fuzzyThreshold!=null){
+    const sel = document.getElementById('fuzzyThresholdInput');
+    if([...sel.options].some(o=>o.value===String(config.fuzzyThreshold))) sel.value = String(config.fuzzyThreshold);
+  }
+  if(config.birthdateBoost!=null){
+    const sel = document.getElementById('birthdateBoostInput');
+    if([...sel.options].some(o=>o.value===String(config.birthdateBoost))) sel.value = String(config.birthdateBoost);
+  }
+  if(config.localityBoost!=null){
+    const sel = document.getElementById('localityBoostInput');
+    if([...sel.options].some(o=>o.value===String(config.localityBoost))) sel.value = String(config.localityBoost);
+  }
+
+  renderMatchRulesUI();
+  renderColumnUnification();
+
+  let msg = `✓ Configuración aplicada: ${appliedRules} reglas, ${appliedOverrides} columnas unificadas.`;
+  if(skippedRefs>0) msg += ` ${skippedRefs} referencia(s) a columnas que no existen en estas bases se ignoraron.`;
+  return msg;
+}
+
+/* ============================================================
+   PASO 2 → 3: ANÁLISIS (clusters fuertes + candidatos a revisar)
+============================================================ */
+document.getElementById('btnRunMerge').addEventListener('click', ()=>{
+  runAnalysis();
+  showPanel(3);
+});
+
+function runAnalysis(){
+  combineMultiValue = document.getElementById('chkCombineMultiValue').checked;
+  fuzzyThreshold = parseInt(document.getElementById('fuzzyThresholdInput').value, 10) / 100;
+  birthdateBoost = parseInt(document.getElementById('birthdateBoostInput').value, 10) / 100;
+  localityBoost = parseInt(document.getElementById('localityBoostInput').value, 10) / 100;
+
+  // 1. Aplanar todas las filas con metadata
+  const allRows = [];
+  sources.forEach((s, sIdx)=>{
+    s.rows.forEach(r=> allRows.push({ data:r, sourceIdx:sIdx, sourceName:s.name, idx: allRows.length }));
+  });
+  allRowsGlobal = allRows;
+
+  // 2. Clusters "fuertes": union-find usando solo email / teléfono / DNI-CUIT
+  const parent = allRows.map((_,i)=>i);
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; } // path compression
+  function union(a,b){ const ra=find(a), rb=find(b); if(ra!==rb) parent[rb]=ra; }
+
+  const keyMap = {};
+  allRows.forEach((row, idx)=>{
+    getStrongKeys(row.data, row.sourceIdx).forEach(k=>{
+      if(!keyMap[k]) keyMap[k]=[];
+      keyMap[k].push(idx);
+    });
+  });
+  Object.values(keyMap).forEach(group=>{
+    for(let i=1;i<group.length;i++) union(group[0], group[i]);
+  });
+
+  const clusterMap = {};
+  allRows.forEach((row, idx)=>{
+    const root = find(idx);
+    if(!clusterMap[root]) clusterMap[root]=[];
+    clusterMap[root].push(idx);
+  });
+  strongClusters = Object.values(clusterMap);
+
+  const rowToCluster = {};
+  strongClusters.forEach((rowIdxs, ci)=> rowIdxs.forEach(idx=> rowToCluster[idx]=ci));
+
+  // 3. Señales débiles: nombre completo + fecha + localidad
+  const weak = allRows.map(row=>({
+    fullName: buildFullName(row.data, row.sourceIdx),
+    fecha: getFechaNacimiento(row.data, row.sourceIdx),
+    localidad: getLocalityValue(row.data)
+  }));
+
+  // 4. BLOCKING MULTI-CLAVE para 10k+ registros
+  // Usamos 3 estrategias simultáneas y unimos los bloques:
+  //   a) Soundex en español de la primera palabra del nombre normalizado
+  //   b) Primeras 3 letras del nombre ordenado (como antes pero más estricto)
+  //   c) Fecha de nacimiento (si está disponible — muy selectivo)
+  // Cada fila puede caer en varios bloques, lo que da mayor recall sin explotar el costo.
+
+  function soundexES(str){
+    if(!str) return '';
+    const s = str.toUpperCase().replace(/[^A-Z]/g,'');
+    if(!s) return '';
+    const MAP = {B:1,F:1,P:1,V:1, C:2,G:2,J:2,K:2,Q:2,S:2,X:2,Z:2, D:3,T:3, L:4, M:5,N:5, R:6};
+    let code = s[0];
+    let prev = MAP[s[0]] || 0;
+    for(let i=1;i<s.length && code.length<4;i++){
+      const d = MAP[s[i]];
+      if(d && d!==prev){ code+=d; }
+      prev = d||0;
+    }
+    return code.padEnd(4,'0');
+  }
+
+  const nameRulesActive = matchRules.some(r=> ['nombre','apellido','nombre_completo'].includes(r.id) && r.active);
+
+  // Construir índice multi-clave: blockKey → Set de row indices
+  const blockIndex = new Map();
+  function addToBlock(key, idx){
+    if(!key) return;
+    if(!blockIndex.has(key)) blockIndex.set(key, []);
+    blockIndex.get(key).push(idx);
+  }
+
+  if(nameRulesActive){
+    allRows.forEach((row, idx)=>{
+      const fn = weak[idx].fullName;
+      if(!fn) return;
+      const words = fn.split(' ');
+      // a) Soundex de cada palabra (hasta 2) — captura variantes ortográficas
+      words.slice(0,2).forEach(w=>{ if(w.length>=2) addToBlock('sx:'+soundexES(w), idx); });
+      // b) Trigramas del nombre completo ordenado — más preciso
+      if(fn.length>=3) addToBlock('tg:'+fn.slice(0,3), idx);
+      // c) Bloque por fecha de nacimiento (muy selectivo cuando está disponible)
+      const fecha = weak[idx].fecha;
+      if(fecha) addToBlock('fd:'+fecha, idx);
+    });
+  }
+
+  // 5. Generar candidatos comparando solo dentro de cada bloque
+  // Usamos un Set para evitar evaluar el mismo par dos veces (cada par puede aparecer en varios bloques)
+  const seenPairs = new Set();
+  const pairBest = {};
+  const MAX_BLOCK_SIZE = 200; // bloques más grandes que esto se saltan (ruido, no ganancia real)
+
+  if(nameRulesActive){
+    blockIndex.forEach((idxs)=>{
+      if(idxs.length < 2 || idxs.length > MAX_BLOCK_SIZE) return;
+      for(let i=0;i<idxs.length;i++){
+        for(let j=i+1;j<idxs.length;j++){
+          const a = idxs[i], b = idxs[j];
+          let ciA = rowToCluster[a], ciB = rowToCluster[b];
+          if(ciA===ciB) continue;
+          if(ciA>ciB){ const t=ciA; ciA=ciB; ciB=t; }
+          const pairKey = ciA+'_'+ciB;
+          if(seenPairs.has(pairKey)) continue;
+          seenPairs.add(pairKey);
+
+          const fnA = weak[a].fullName, fnB = weak[b].fullName;
+          if(!fnA || !fnB) continue;
+          const score = nameSimilarity(fnA, fnB);
+          if(score < fuzzyThreshold) continue;
+          const reasons = [];
+          reasons.push(score>=0.999 ? 'Nombre idéntico' : `Nombres similares (${Math.round(score*100)}% de coincidencia)`);
+          let boosted = score;
+          if(birthdateBoost>0 && weak[a].fecha && weak[b].fecha && weak[a].fecha===weak[b].fecha){
+            reasons.push('Misma fecha de nacimiento');
+            boosted = Math.min(1, score+birthdateBoost);
+          }
+          if(localityBoost>0 && weak[a].localidad && weak[b].localidad && weak[a].localidad===weak[b].localidad){
+            reasons.push(`Misma ciudad (${weak[a].localidad})`);
+            boosted = Math.min(1, boosted+localityBoost);
+          }
+          const existing = pairBest[pairKey];
+          if(!existing || boosted>existing.score){
+            pairBest[pairKey] = { ciA, ciB, score: boosted, rawScore: score, reasons, rowA:a, rowB:b };
+          }
+        }
+      }
+    });
+  }
+
+  candidatePairs = Object.values(pairBest).sort((x,y)=> y.score - x.score);
+  pairDecisions = {};
+  candidatesShowAll = false;
+  // guardar estadística de bloques para mostrar en UI
+  lastAnalysisStats = {
+    totalRows: allRows.length,
+    totalBlocks: blockIndex.size,
+    comparisonsRun: seenPairs.size,
+    theoreticalMax: Math.round(allRows.length * (allRows.length-1) / 2)
+  };
+  candidatePairs.forEach((p,idx)=>{
+    p.id = idx;
+    // por defecto: confirmar fusión solo cuando el nombre es idéntico (replica el comportamiento anterior);
+    // las coincidencias por similitud quedan sin marcar para que el usuario decida.
+    pairDecisions[idx] = p.rawScore >= 0.999;
+  });
+
+  renderCandidates();
+}
+
+// Agrupa los pares candidatos en componentes conexas: si A~B y B~C, las 3 se muestran
+// juntas como "posiblemente la misma persona" en una sola tarjeta.
+function buildReviewGroups(){
+  const involved = uniq(candidatePairs.flatMap(p=>[p.ciA, p.ciB]));
+  const idx = new Map(involved.map((ci,i)=>[ci,i]));
+  const parent = involved.map((_,i)=>i);
+  function find(x){ while(parent[x]!==x) x=parent[x]; return x; }
+  function union(a,b){ const ra=find(a), rb=find(b); if(ra!==rb) parent[rb]=ra; }
+  candidatePairs.forEach(p=> union(idx.get(p.ciA), idx.get(p.ciB)));
+
+  const groups = {};
+  involved.forEach((ci,i)=>{
+    const root = find(i);
+    if(!groups[root]) groups[root] = new Set();
+    groups[root].add(ci);
+  });
+  return Object.values(groups).map(clusterSet=>{
+    const clusters = [...clusterSet].sort((a,b)=>a-b);
+    const pairs = candidatePairs.filter(p=> clusterSet.has(p.ciA) && clusterSet.has(p.ciB));
+    return { clusters, pairs };
+  });
+}
+
+const GROUP_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function renderCandidates(){
+  const container = document.getElementById('candidatesList');
+
+  // Mostrar estadística de eficiencia del motor de blocking
+  const statsEl = document.getElementById('analysisPerformanceStat');
+  if(statsEl && lastAnalysisStats){
+    const s = lastAnalysisStats;
+    const pct = s.theoreticalMax > 0 ? Math.round(s.comparisonsRun/s.theoreticalMax*100) : 0;
+    statsEl.innerHTML = `
+      <span style="font-family:var(--mono); font-size:11px; color:var(--text-dim);">
+        ${s.totalRows.toLocaleString()} registros · ${s.comparisonsRun.toLocaleString()} comparaciones
+        (${pct}% del total posible — blocking Soundex activo)
+      </span>`;
+  }
+
+  if(candidatePairs.length===0){
+    container.innerHTML = `<div class="small-note" style="padding:20px 0;">No se encontraron coincidencias adicionales por nombre con el umbral elegido. Podés continuar al resultado.</div>`;
+    return;
+  }
+  const groups = buildReviewGroups();
+
+  let warningHtml = '';
+  const CANDIDATE_LIMIT = 30;
+  let visibleGroups = groups;
+  if(groups.length > CANDIDATE_LIMIT){
+    warningHtml = `<div class="small-note" style="padding:10px 12px; border:1px solid var(--accent-2); border-radius:4px; margin-bottom:12px; color:var(--accent-2);">
+      Se encontraron <b>${groups.length}</b> posibles coincidencias por nombre — revisarlas todas puede tardar.
+      Podés subir la "Sensibilidad para nombres similares" en el paso anterior para reducir la lista,
+      ${candidatesShowAll ? '' : `o <button class="secondary" id="btnShowAllCandidates" style="padding:2px 8px; font-size:11px;">mostrar las ${groups.length} de todas formas</button>.`}
+    </div>`;
+    if(!candidatesShowAll) visibleGroups = groups.slice(0, CANDIDATE_LIMIT);
+  }
+
+  container.innerHTML = warningHtml + visibleGroups.map(g=>{
+    const memberIdx = new Map(g.clusters.map((ci,i)=>[ci,i]));
+    const membersHtml = g.clusters.map((ci,i)=>{
+      const rowIdxs = strongClusters[ci];
+      const main = allRowsGlobal[rowIdxs[0]];
+      const extra = rowIdxs.length>1 ? ` <span class="colunify-tag">+${rowIdxs.length-1} fuente${rowIdxs.length>2?'s':''} más</span>` : '';
+      const letter = GROUP_LETTERS[i] || ('#'+(i+1));
+      return `<div class="candidate-record">
+        <div class="candidate-source">${letter} · ${escHtml(main.sourceName)}${extra}</div>
+        ${renderCandidateFields(main)}
+      </div>`;
+    }).join('');
+
+    const relsHtml = g.pairs.map(p=>{
+      const a = memberIdx.get(p.ciA), b = memberIdx.get(p.ciB);
+      const la = GROUP_LETTERS[a] || ('#'+(a+1)), lb = GROUP_LETTERS[b] || ('#'+(b+1));
+      const pct = Math.round(p.score*100);
+      const color = p.score>=0.95 ? 'var(--match)' : 'var(--accent-2)';
+      return `<label class="checkbox-row candidate-relation">
+        <input type="checkbox" class="candidate-chk" data-pair="${p.id}" ${pairDecisions[p.id]?'checked':''}>
+        <span class="badge" style="color:${color}; border-color:${color};">${la} ↔ ${lb} · ${pct}%</span>
+        <span class="candidate-reasons">${p.reasons.map(escHtml).join(' · ')}</span>
+      </label>`;
+    }).join('');
+
+    return `
+      <div class="candidate-card">
+        <div class="candidate-body">${membersHtml}</div>
+        <div class="candidate-relations">${relsHtml}</div>
+      </div>`;
+  }).join('');
+
+  container.querySelectorAll('.candidate-chk').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      pairDecisions[parseInt(e.target.dataset.pair)] = e.target.checked;
+    });
+  });
+  const showAllBtn = document.getElementById('btnShowAllCandidates');
+  if(showAllBtn) showAllBtn.addEventListener('click', ()=>{ candidatesShowAll = true; renderCandidates(); });
+}
+
+function renderCandidateFields(row){
+  const entries = Object.entries(row.data).filter(([k,v])=>!isEmpty(v));
+  return entries.map(([k,v])=>`<div class="candidate-field"><span class="k">${escHtml(k)}:</span> ${escHtml(v)}</div>`).join('');
+}
+
+/* ============================================================
+   PASO 3 → 4: FUSIÓN FINAL
+============================================================ */
+document.getElementById('btnContinueToResults').addEventListener('click', ()=>{
+  runMerge();
+  showPanel(4);
+});
+
+function runMerge(){
+  const allRows = allRowsGlobal;
+
+  // 1. Unir clusters fuertes según los candidatos confirmados en la revisión
+  const n = strongClusters.length;
+  const parent = Array.from({length:n}, (_,i)=>i);
+  function find(x){ while(parent[x]!==x) x=parent[x]; return x; }
+  function union(a,b){ const ra=find(a), rb=find(b); if(ra!==rb) parent[rb]=ra; }
+  let confirmedMatches = 0;
+  candidatePairs.forEach(p=>{
+    if(pairDecisions[p.id]){ union(p.ciA, p.ciB); confirmedMatches++; }
+  });
+
+  // Para la auditoría: a qué cluster "fuerte" pertenece cada fila, y qué pares
+  // de clusters fuertes quedaron unidos por una coincidencia de nombre confirmada.
+  mergedRowToStrongCluster = {};
+  strongClusters.forEach((rowIdxs, ci)=> rowIdxs.forEach(idx=> mergedRowToStrongCluster[idx]=ci));
+  confirmedPairLinkSet = new Set();
+  candidatePairs.forEach(p=>{
+    if(pairDecisions[p.id]) confirmedPairLinkSet.add([Math.min(p.ciA,p.ciB), Math.max(p.ciA,p.ciB)].join('_'));
+  });
+
+  const finalClusterMap = {};
+  for(let ci=0; ci<n; ci++){
+    const root = find(ci);
+    if(!finalClusterMap[root]) finalClusterMap[root]=[];
+    finalClusterMap[root].push(...strongClusters[ci]);
+  }
+  mergedClusters = Object.values(finalClusterMap).map(rowIdxs=> rowIdxs.map(idx=> allRows[idx]));
+
+  // 2. Columnas finales: aplicando los nombres unificados elegidos por el usuario
+  const colMap = {}; // normalizado -> nombre a mostrar
+  sources.forEach((s, sIdx)=> s.columns.forEach(c=>{
+    const eff = effectiveColName(sIdx, c);
+    const norm = normalizeStr(eff).replace(/[_\s]/g,'');
+    if(!(norm in colMap)) colMap[norm] = eff;
+  }));
+  mergedColumns = Object.values(colMap);
+
+  // 3. Mapa columna normalizada -> {type, field}, para normalización de conflictos y combinación multivalor
+  mergedColInfo = {};
+  matchRules.forEach(rule=>{
+    if(!rule.active) return;
+    Object.values(rule.mappings).forEach(col=>{
+      if(!col) return;
+      const norm = normalizeStr(col).replace(/[_\s]/g,'');
+      mergedColInfo[norm] = { type: rule.type, field: rule.id };
+    });
+  });
+
+  confirmedMatchesCount = confirmedMatches;
+  activeFilters = [];
+  globalSearchTerm = '';
+  filterCombineMode = 'AND';
+  sortState = {col:null, dir:1};
+  selectedRowIds = new Set();
+  currentPage = 1;
+  expandedRowIds = new Set();
+  editHistory = []; editFuture = []; cellEdits = {};
+  rowComments = {}; rowStatus = {};
+  exportColumns = [...mergedColumns];
+  exportColumnEnabled = {};
+  mergedColumns.forEach(c=> exportColumnEnabled[c]=true);
+  rebuildMergedData();
+  renderResults();
+}
+
+function normalizeForCompare(v, type, norm){
+  if(isLocalityColumn(norm)) return normalizeLocality(v);
+  if(type==='phone') return normalizePhone(v);
+  if(type==='dni') return normalizeDNI(v);
+  if(type==='date') return normalizeDate(v);
+  return normalizeStr(v);
+}
+
+/* ============================================================
+   NORMALIZACIÓN DE NOMBRES PROPIOS
+   Corrige capitalización y accentos comunes mal escritos
+============================================================ */
+const NAME_STOPWORDS = new Set(['de','del','la','las','lo','los','el','y','e','a','da','di','von','van','bin','bint']);
+function toTitleCase(str){
+  return String(str).replace(/[-\s]+/g,' ').trim()
+    .split(' ')
+    .map((w,i)=>{
+      if(!w) return w;
+      const lower = w.toLowerCase();
+      // preposiciones/artículos dentro del nombre van en minúscula (excepto al inicio)
+      if(i>0 && NAME_STOPWORDS.has(lower)) return lower;
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+}
+
+function isNameColumn(norm){
+  return ['nombre','apellido','nombrecompleto','nombreyapellido','fullname','nombreapellido',
+          'primernombre','lastname','firstname'].some(k=> norm.includes(k));
+}
+
+// Normaliza un nombre propio para mostrar (título case, si parece todo mayúsculas o todo minúsculas)
+function normalizeNameForDisplay(v){
+  const s = String(v).trim();
+  // solo actuar si está todo en mayúsculas o todo en minúsculas (no si ya tiene capitalización mixta)
+  const letters = s.replace(/[^a-záéíóúüñA-ZÁÉÍÓÚÜÑ]/g,'');
+  if(!letters || letters.length<3) return s;
+  const allUpper = letters === letters.toUpperCase();
+  const allLower = letters === letters.toLowerCase();
+  if(allUpper || allLower) return toTitleCase(s);
+  return s;
+}
+
+/* ============================================================
+   SUGERENCIAS DE CORRECCIÓN (emails y teléfonos)
+============================================================ */
+function suggestEmailFix(v){
+  const s = String(v||'').trim();
+  if(!s || s.includes('@')) return null;
+  // Errores comunes: arroba omitida, gmail sin punto, etc.
+  const commonDomains = ['gmail.com','hotmail.com','yahoo.com','outlook.com','icloud.com'];
+  for(const d of commonDomains){
+    if(s.toLowerCase().endsWith(d) && !s.includes('@')){
+      const local = s.slice(0, s.length-d.length).replace(/[.\-_ ]+$/,'');
+      if(local) return `${local}@${d}`;
+    }
+  }
+  return null;
+}
+
+function suggestPhoneFix(v){
+  const s = String(v||'').trim().replace(/[^0-9+]/g,'');
+  if(!s) return null;
+  // Sugiere formato estándar si tiene una cantidad de dígitos válida pero rara
+  const digits = s.replace(/[^0-9]/g,'');
+  if(digits.length<6 || digits.length>15) return `Revisar: ${digits.length} dígitos`;
+  return null;
+}
+
+
+// Construye una fila fusionada a partir de un grupo de filas crudas {data, sourceIdx, sourceName}
+function buildMergedRow(group, id){
+  const merged = {};
+  const conflicts = {};
+  const sourcesUsed = uniq(group.map(g=>g.sourceName));
+  mergedColumns.forEach(displayCol=>{
+    const norm = normalizeStr(displayCol).replace(/[_\s]/g,'');
+    const valuesFound = []; // {value, source}
+    group.forEach(g=>{
+      for(const origCol in g.data){
+        const eff = effectiveColName(g.sourceIdx, origCol);
+        if(normalizeStr(eff).replace(/[_\s]/g,'') === norm){
+          const v = g.data[origCol];
+          if(!isEmpty(v)) valuesFound.push({value: v, source: g.sourceName});
+        }
+      }
+    });
+    if(valuesFound.length===0){
+      merged[displayCol] = null;
+    } else {
+      const info = mergedColInfo[norm];
+      const colType = info && info.type;
+      const colField = info && info.field;
+      const distinct = uniq(valuesFound.map(v=> normalizeForCompare(v.value, colType, norm)));
+      if(distinct.length<=1){
+        let val = valuesFound[0].value;
+        // Siempre mayúsculas en el resultado final para texto
+        if(!isEmpty(val) && typeof val === 'string') val = val.toUpperCase();
+        merged[displayCol] = val;
+      } else if(combineMultiValue && (colField==='email' || colField==='telefono')){
+        // combinar valores distintos (ej. dos emails) en una sola celda, sin marcar conflicto
+        // emails en minúsculas (estándar), teléfonos tal cual
+        const seen = new Set();
+        const combinedVals = [];
+        valuesFound.forEach(v=>{
+          const n2 = normalizeForCompare(v.value, colType, norm);
+          if(!seen.has(n2)){ seen.add(n2); combinedVals.push(v.value); }
+        });
+        merged[displayCol] = combinedVals.join(' / ');
+      } else {
+        // conflicto — mostrar en mayúsculas el valor principal, guardar todos para el picker
+        const mainVal = valuesFound[0].value;
+        merged[displayCol] = (!isEmpty(mainVal) && typeof mainVal==='string') ? mainVal.toUpperCase() : mainVal;
+        conflicts[displayCol] = valuesFound.map(v=>({
+          ...v,
+          value: (!isEmpty(v.value) && typeof v.value==='string') ? v.value.toUpperCase() : v.value
+        }));
+      }
+    }
+  });
+  merged['__sources'] = sourcesUsed;
+  merged['__id'] = id;
+  return { merged, conflicts };
+}
+
+// Reconstruye mergedData/conflictsMap a partir de mergedClusters (usado también
+// después de fusiones/deshacer manuales en el paso de resultados).
+function rebuildMergedData(){
+  mergedData = [];
+  conflictsMap = {};
+  conflictResolutions = {}; // las resoluciones manuales se basan en el __id; al renumerar, se reinician
+  mergedClusters.forEach((group, i)=>{
+    const id = i+1;
+    const { merged, conflicts } = buildMergedRow(group, id);
+    if(Object.keys(conflicts).length>0) conflictsMap[id] = conflicts;
+    mergedData.push(merged);
+  });
+  mergedData.__confirmedMatches = confirmedMatchesCount;
+}
+
+// Valor "efectivo" de una celda: el elegido manualmente para un conflicto, o el valor normal.
+function getResolvedValue(row, col){
+  const res = conflictResolutions[row.__id];
+  if(res && res[col]!==undefined) return res[col];
+  return row[col];
+}
+
+/* ============================================================
+   EDICIÓN MANUAL: fusionar filas seleccionadas / deshacer una fusión
+============================================================ */
+function mergeSelectedRows(){
+  if(selectedRowIds.size<2) return;
+  snapshotState();
+  const ids = [...selectedRowIds];
+  const keep = [];
+  let combined = [];
+  mergedClusters.forEach((group, i)=>{
+    if(ids.includes(i+1)) combined = combined.concat(group);
+    else keep.push(group);
+  });
+  keep.push(combined);
+  mergedClusters = keep;
+  selectedRowIds = new Set();
+  rebuildMergedData();
+  renderResults();
+}
+
+function undoMergeRow(id){
+  snapshotState();
+  const idx = id-1;
+  if(idx<0 || idx>=mergedClusters.length) return;
+  const group = mergedClusters[idx];
+  if(group.length<2) return;
+  const rest = mergedClusters.slice(0,idx).concat(mergedClusters.slice(idx+1));
+  group.forEach(g=> rest.push([g]));
+  mergedClusters = rest;
+  selectedRowIds = new Set();
+  rebuildMergedData();
+  renderResults();
+}
+
+/* ============================================================
+   RESULTS RENDERING
+============================================================ */
+/* ============================================================
+   PANELES DE ANÁLISIS: solapamiento entre bases y calidad por columna
+============================================================ */
+let analysisPanelsOpen = {venn: true, quality: false};
+
+function renderAnalysisPanels(){
+  const el = document.getElementById('analysisPanels');
+  if(!el || sources.length<1){ if(el) el.innerHTML=''; return; }
+  el.innerHTML = `
+    <div class="analysis-panel">
+      <div class="analysis-panel-header" id="vennHeader">
+        <h4>Solapamiento entre bases</h4>
+        <span>${analysisPanelsOpen.venn?'▲':'▼'}</span>
+      </div>
+      <div class="analysis-panel-body" id="vennBody" ${analysisPanelsOpen.venn?'':'style="display:none"'}>
+        ${buildVennHTML()}
+      </div>
+    </div>
+    <div class="analysis-panel">
+      <div class="analysis-panel-header" id="qualityHeader">
+        <h4>Calidad de datos por columna</h4>
+        <span>${analysisPanelsOpen.quality?'▲':'▼'}</span>
+      </div>
+      <div class="analysis-panel-body" id="qualityBody" ${analysisPanelsOpen.quality?'':'style="display:none"'}>
+        ${buildQualityHTML()}
+      </div>
+    </div>
+  `;
+  document.getElementById('vennHeader').addEventListener('click', ()=>{
+    analysisPanelsOpen.venn = !analysisPanelsOpen.venn; renderAnalysisPanels();
+  });
+  document.getElementById('qualityHeader').addEventListener('click', ()=>{
+    analysisPanelsOpen.quality = !analysisPanelsOpen.quality; renderAnalysisPanels();
+  });
+}
+
+function buildVennHTML(){
+  if(mergedData.length===0) return '<div class="small-note">Sin datos.</div>';
+  const total = mergedData.length;
+  const rows = [];
+
+  // Cada base individual: cuántas personas la incluyen
+  sources.forEach(s=>{
+    const count = mergedData.filter(r=> r.__sources.includes(s.name)).length;
+    rows.push({ label: s.name, count, pct: count/total });
+  });
+
+  // Intersecciones de a pares (si hay 2 o más bases)
+  if(sources.length>=2){
+    for(let i=0; i<sources.length; i++){
+      for(let j=i+1; j<sources.length; j++){
+        const sA = sources[i].name, sB = sources[j].name;
+        const count = mergedData.filter(r=> r.__sources.includes(sA) && r.__sources.includes(sB)).length;
+        if(count>0) rows.push({ label:`${sA} ∩ ${sB}`, count, pct: count/total, inter:true });
+      }
+    }
+    // Solo en una base
+    sources.forEach(s=>{
+      const count = mergedData.filter(r=> r.__sources.length===1 && r.__sources[0]===s.name).length;
+      if(count>0) rows.push({ label:`Solo en ${s.name}`, count, pct: count/total, exclusive:true });
+    });
+  }
+
+  return '<div class="venn-wrap">' + rows.map(r=>`
+    <div class="venn-row">
+      <div class="venn-label" title="${escHtml(r.label)}">${escHtml(r.label)}</div>
+      <div class="venn-bar-bg"><div class="venn-bar-fill" style="width:${Math.round(r.pct*100)}%; ${r.exclusive?'background:var(--accent-2);':''}${r.inter?'background:var(--match);':''}"></div></div>
+      <div class="venn-count">${r.count}</div>
+    </div>`).join('') + '</div>';
+}
+
+function buildQualityHTML(){
+  if(mergedData.length===0) return '<div class="small-note">Sin datos.</div>';
+  const n = mergedData.length;
+  const colStats = mergedColumns.map(col=>{
+    let empty=0, conflict=0, resolved=0, topVals={};
+    mergedData.forEach(row=>{
+      const v = getResolvedValue(row, col);
+      if(isEmpty(v)){ empty++; return; }
+      const vs = String(v);
+      topVals[vs] = (topVals[vs]||0)+1;
+      if(conflictsMap[row.__id] && conflictsMap[row.__id][col]){
+        if(conflictResolutions[row.__id] && conflictResolutions[row.__id][col]!==undefined) resolved++;
+        else conflict++;
+      }
+    });
+    const top = Object.entries(topVals).sort((a,b)=>b[1]-a[1]).slice(0,3)
+      .map(([v,c])=>`${escHtml(v)} (${c})`).join(', ');
+    return { col, empty, conflict, resolved, top, pctFull: Math.round((n-empty)/n*100) };
+  });
+
+  return `<table class="quality-table">
+    <thead><tr>
+      <th>Columna</th><th>Completitud</th><th>Conflictos</th><th>Valores más frecuentes</th>
+    </tr></thead>
+    <tbody>
+    ${colStats.map(s=>`<tr>
+      <td style="font-family:var(--mono); font-size:11px;">${escHtml(s.col)}</td>
+      <td>
+        <span class="quality-bar-wrap"><span class="quality-bar ${s.pctFull<50?'warn':''}" style="width:${s.pctFull}%;"></span></span>
+        <span style="font-family:var(--mono); font-size:11px; margin-left:6px;">${s.pctFull}%</span>
+      </td>
+      <td style="font-family:var(--mono); font-size:11px; color:${s.conflict?'var(--conflict)':'var(--text-dim)'};">
+        ${s.conflict>0 ? `${s.conflict} sin resolver` : s.resolved>0 ? `${s.resolved} resueltos` : '—'}
+      </td>
+      <td style="color:var(--text-dim); font-size:11px; max-width:200px; overflow:hidden; text-overflow:ellipsis;" title="${escHtml(s.top)}">${s.top||'—'}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function renderResults(){
+  renderStats();
+  renderAnalysisPanels();
+  renderFilterBar();
+  renderActiveFilters();
+  setupGlobalControls();
+  renderSavedViews();
+  renderExportConfig();
+  renderUndoRedoBar();
+  renderTable();
+}
+
+let globalControlsBound = false;
+let searchCurrentHit = 0; // índice del hit actualmente resaltado (1-based)
+
+function setupGlobalControls(){
+  if(globalControlsBound) return;
+  globalControlsBound = true;
+
+  const search = document.getElementById('globalSearch');
+  search.value = globalSearchTerm;
+  document.getElementById('searchClear').classList.toggle('hidden', !globalSearchTerm);
+  if(!globalSearchTerm){ updateSearchCount(0); }
+
+  search.addEventListener('input', ()=>{
+    globalSearchTerm = search.value;
+    searchCurrentHit = 1;
+    document.getElementById('searchClear').classList.toggle('hidden', !globalSearchTerm);
+    renderTable();
+    if(globalSearchTerm) highlightCurrentHit();
+  });
+
+  search.addEventListener('keydown', e=>{
+    if(e.key==='Enter'){
+      e.preventDefault();
+      if(e.shiftKey) navigateHit(-1); else navigateHit(1);
+    }
+  });
+
+  document.getElementById('searchPrev').addEventListener('click', ()=> navigateHit(-1));
+  document.getElementById('searchNext').addEventListener('click', ()=> navigateHit(1));
+  document.getElementById('searchClear').addEventListener('click', ()=>{
+    globalSearchTerm = ''; search.value = ''; searchCurrentHit = 1;
+    document.getElementById('searchClear').classList.add('hidden');
+    renderTable();
+    search.focus();
+  });
+
+  const combineSel = document.getElementById('filterCombineMode');
+  combineSel.value = filterCombineMode;
+  combineSel.addEventListener('change', ()=>{
+    filterCombineMode = combineSel.value;
+    renderTable();
+  });
+
+  document.getElementById('btnSaveView').addEventListener('click', ()=>{
+    if(activeFilters.length===0 && !globalSearchTerm){
+      alert('No hay filtros ni búsqueda activos para guardar.');
+      return;
+    }
+    const name = prompt('Nombre para esta vista:', `Vista ${savedViews.length+1}`);
+    if(!name) return;
+    savedViews.push({
+      name,
+      filters: JSON.parse(JSON.stringify(activeFilters)),
+      combineMode: filterCombineMode,
+      search: globalSearchTerm
+    });
+    renderSavedViews();
+  });
+}
+
+// Vistas guardadas: combinaciones de filtros + búsqueda + modo Y/O, para reaplicar con un click.
+// Se guardan solo en memoria (duran lo que dura esta pestaña).
+function renderSavedViews(){
+  const el = document.getElementById('savedViews');
+  if(savedViews.length===0){ el.innerHTML=''; return; }
+  el.innerHTML = savedViews.map((v,idx)=>
+    `<span class="view-chip" data-idx="${idx}" title="Click para aplicar esta vista">📌 ${escHtml(v.name)} <button data-idx="${idx}" title="Eliminar vista">✕</button></span>`
+  ).join('');
+  el.querySelectorAll('.view-chip').forEach(chip=>{
+    chip.addEventListener('click', e=>{
+      const idx = parseInt(chip.dataset.idx, 10);
+      if(e.target.tagName==='BUTTON'){
+        savedViews.splice(idx,1);
+        renderSavedViews();
+        return;
+      }
+      const v = savedViews[idx];
+      activeFilters = JSON.parse(JSON.stringify(v.filters));
+      filterCombineMode = v.combineMode;
+      globalSearchTerm = v.search;
+      document.getElementById('filterCombineMode').value = filterCombineMode;
+      document.getElementById('globalSearch').value = globalSearchTerm;
+      renderActiveFilters();
+      renderTable();
+    });
+  });
+}
+
+// Configuración de exportación: qué columnas incluir, en qué orden (drag & drop),
+// y qué base usar como "referencia" para exportar solo personas nuevas.
+let exportSortableInstance = null;
+function renderExportConfig(){
+  const list = document.getElementById('exportColumnsList');
+  list.innerHTML = exportColumns.map(col=>`
+    <div class="export-col-row" data-col="${escAttr(col)}">
+      <span class="drag-handle">⠿⠿</span>
+      <label class="checkbox-row" style="flex:1; margin:0;">
+        <input type="checkbox" class="export-col-chk" data-col="${escAttr(col)}" ${exportColumnEnabled[col]?'checked':''}>
+        <span>${escHtml(col)}</span>
+      </label>
+    </div>`).join('');
+
+  list.querySelectorAll('.export-col-chk').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      exportColumnEnabled[e.target.dataset.col] = e.target.checked;
+    });
+  });
+
+  if(exportSortableInstance) exportSortableInstance.destroy();
+  if(typeof Sortable!=='undefined'){
+    exportSortableInstance = Sortable.create(list, {
+      animation:150,
+      onEnd: ()=>{
+        exportColumns = [...list.querySelectorAll('.export-col-row')].map(el=>el.dataset.col);
+      }
+    });
+  }
+
+  const sel = document.getElementById('referenceSourceSelect');
+  const current = sel.value || referenceSourceName;
+  sel.innerHTML = '<option value="">— ninguna —</option>' +
+    sources.map(s=>`<option value="${escAttr(s.name)}">${escHtml(s.name)}</option>`).join('');
+  sel.value = sources.some(s=>s.name===current) ? current : '';
+  referenceSourceName = sel.value;
+  if(!sel.dataset.bound){
+    sel.dataset.bound = '1';
+    sel.addEventListener('change', ()=>{ referenceSourceName = sel.value; });
+  }
+}
+
+
+function renderStats(){
+  const totalOriginal = sources.reduce((sum,s)=>sum+s.rows.length,0);
+  const merged = mergedData.length;
+  const reduced = totalOriginal - merged;
+  let intraSourceDuplicates = 0;
+  mergedClusters.forEach(group=>{
+    const counts = {};
+    group.forEach(g=> counts[g.sourceName]=(counts[g.sourceName]||0)+1);
+    Object.values(counts).forEach(c=>{ if(c>1) intraSourceDuplicates += (c-1); });
+  });
+  let conflictRows = 0;
+  Object.keys(conflictsMap).forEach(id=>{
+    const conflicts = conflictsMap[id];
+    const res = conflictResolutions[id] || {};
+    if(Object.keys(conflicts).some(col=> res[col]===undefined)) conflictRows++;
+  });
+  let editedCells = 0;
+  Object.values(conflictResolutions).forEach(colMap=> editedCells += Object.keys(colMap).length);
+  let formatWarnings = 0;
+  mergedData.forEach(row=>{
+    mergedColumns.forEach(col=>{
+      const norm = normalizeStr(col).replace(/[_\s]/g,'');
+      const info = mergedColInfo[norm];
+      if(!info) return;
+      const hasConflict = conflictsMap[row.__id] && conflictsMap[row.__id][col];
+      const hasOverride = conflictResolutions[row.__id] && conflictResolutions[row.__id][col]!==undefined;
+      if(hasConflict || hasOverride) return;
+      if(checkFormatWarning(row[col], info.field)) formatWarnings++;
+    });
+  });
+  const statsRow = document.getElementById('statsRow');
+  statsRow.innerHTML = `
+    <div class="stat">
+      <div class="num">${sources.length}</div>
+      <div class="label">bases cargadas</div>
+    </div>
+    <div class="stat">
+      <div class="num">${totalOriginal}</div>
+      <div class="label">registros originales</div>
+    </div>
+    <div class="stat merged">
+      <div class="num">${merged}</div>
+      <div class="label">personas únicas</div>
+    </div>
+    <div class="stat accent">
+      <div class="num">${reduced}</div>
+      <div class="label">duplicados fusionados</div>
+    </div>
+    <div class="stat accent">
+      <div class="num">${intraSourceDuplicates}</div>
+      <div class="label">duplicados dentro de la misma base</div>
+    </div>
+    <div class="stat conflict">
+      <div class="num">${conflictRows}</div>
+      <div class="label">registros con conflictos</div>
+    </div>
+    <div class="stat merged">
+      <div class="num">${editedCells}</div>
+      <div class="label">celdas editadas a mano</div>
+    </div>
+    <div class="stat conflict">
+      <div class="num">${formatWarnings}</div>
+      <div class="label">valores con formato inusual</div>
+    </div>
+    <div class="stat accent">
+      <div class="num">${mergedData.__confirmedMatches||0}</div>
+      <div class="label">fusiones por nombre confirmadas</div>
+    </div>
+    <div class="stat">
+      <div class="num">${mergedColumns.length}</div>
+      <div class="label">columnas totales</div>
+    </div>
+  `;
+}
+
+function detectColumnType(col){
+  const sample = mergedData.map(r=>r[col]).filter(v=>!isEmpty(v)).slice(0,30);
+  if(sample.length===0) return 'text';
+  const allNum = sample.every(v=> !isNaN(parseFloat(v)) && isFinite(v));
+  if(allNum) return 'number';
+  const lowSet = uniq(sample.map(v=>normalizeStr(v)));
+  if(lowSet.length<=8 && sample.length>=3) return 'category';
+  return 'text';
+}
+
+function renderFilterBar(){
+  const bar = document.getElementById('filterBar');
+  bar.innerHTML = '';
+
+  const colGroup = document.createElement('div');
+  colGroup.className='filter-group';
+  colGroup.innerHTML = `<label>Columna</label>
+    <select id="filterColumn">
+      ${mergedColumns.map(c=>`<option value="${escAttr(c)}">${escHtml(c)}</option>`).join('')}
+    </select>`;
+  bar.appendChild(colGroup);
+
+  const opGroup = document.createElement('div');
+  opGroup.className='filter-group';
+  opGroup.innerHTML = `<label>Condición</label>
+    <select id="filterOperator">
+      <option value="equals">es igual a</option>
+      <option value="contains">contiene</option>
+      <option value="gt">mayor que</option>
+      <option value="lt">menor que</option>
+      <option value="gte">mayor o igual</option>
+      <option value="lte">menor o igual</option>
+      <option value="notempty">no está vacío</option>
+      <option value="empty">está vacío</option>
+      <option value="conflict">tiene conflicto</option>
+    </select>`;
+  bar.appendChild(opGroup);
+
+  const valGroup = document.createElement('div');
+  valGroup.className='filter-group';
+  valGroup.innerHTML = `<label>Valor</label><input type="text" id="filterValue" placeholder="ej: 25, F, Yoga...">`;
+  bar.appendChild(valGroup);
+
+  const btnGroup = document.createElement('div');
+  btnGroup.className='filter-group';
+  btnGroup.innerHTML = `<label>&nbsp;</label><button class="primary" id="btnAddFilter">+ Agregar filtro</button>`;
+  bar.appendChild(btnGroup);
+
+  const clearGroup = document.createElement('div');
+  clearGroup.className='filter-group';
+  clearGroup.innerHTML = `<label>&nbsp;</label><button class="secondary" id="btnClearFilters">Limpiar filtros</button>`;
+  bar.appendChild(clearGroup);
+
+  // Filtros rápidos de estado
+  const quickGroup = document.createElement('div');
+  quickGroup.className='filter-group';
+  quickGroup.innerHTML = `<label>Filtrar por estado</label>
+    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <button class="secondary" style="font-size:11px;padding:4px 8px;" data-quick-status="pendiente">⏳ Pendiente</button>
+      <button class="secondary" style="font-size:11px;padding:4px 8px;" data-quick-status="dudoso">? Dudoso</button>
+      <button class="secondary" style="font-size:11px;padding:4px 8px;" data-quick-status="ok">✓ Verificado</button>
+    </div>`;
+  bar.appendChild(quickGroup);
+  quickGroup.querySelectorAll('[data-quick-status]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      activeFilters = activeFilters.filter(f=>f.column!=='__status');
+      activeFilters.push({column:'__status', operator:'equals', value: btn.dataset.quickStatus});
+      renderActiveFilters();
+      renderTable();
+    });
+  });
+
+  document.getElementById('btnAddFilter').addEventListener('click', ()=>{
+    const column = document.getElementById('filterColumn').value;
+    const operator = document.getElementById('filterOperator').value;
+    const value = document.getElementById('filterValue').value;
+    if((operator==='notempty'||operator==='empty'||operator==='conflict') || value.trim()!==''){
+      activeFilters.push({column, operator, value});
+      document.getElementById('filterValue').value='';
+      renderActiveFilters();
+      renderTable();
+    }
+  });
+  document.getElementById('btnClearFilters').addEventListener('click', ()=>{
+    activeFilters = [];
+    renderActiveFilters();
+    renderTable();
+  });
+
+  // also allow Enter key
+  bar.querySelector('#filterValue').addEventListener('keydown', e=>{
+    if(e.key==='Enter') document.getElementById('btnAddFilter').click();
+  });
+}
+
+const OP_LABELS = {
+  equals:'=', contains:'contiene', gt:'>', lt:'<', gte:'≥', lte:'≤',
+  notempty:'no vacío', empty:'vacío', conflict:'⚠ conflicto'
+};
+
+function renderActiveFilters(){
+  const el = document.getElementById('activeFilters');
+  el.innerHTML = activeFilters.map((f,idx)=>{
+    let txt = `${f.column} ${OP_LABELS[f.operator]}`;
+    if(!['notempty','empty','conflict'].includes(f.operator)) txt += ` "${f.value}"`;
+    return `<span class="filter-chip">${escHtml(txt)} <button data-idx="${idx}">✕</button></span>`;
+  }).join('');
+  el.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click', e=>{
+      activeFilters.splice(parseInt(e.target.dataset.idx),1);
+      renderActiveFilters();
+      renderTable();
+    });
+  });
+}
+
+function matchOneFilter(row, f){
+  if(f.column==='__status'){
+    const st = rowStatus[row.__id]||'';
+    return f.operator==='equals' ? st===f.value : st!==f.value;
+  }
+  const raw = row[f.column];
+  if(f.operator==='notempty') return !isEmpty(raw);
+  if(f.operator==='empty') return isEmpty(raw);
+  if(f.operator==='conflict'){
+    const conflict = conflictsMap[row.__id] && conflictsMap[row.__id][f.column];
+    const resolved = conflictResolutions[row.__id] && conflictResolutions[row.__id][f.column]!==undefined;
+    return !!conflict && !resolved;
+  }
+  if(isEmpty(raw)) return false;
+  const numVal = parseFloat(f.value);
+  const numRaw = parseFloat(raw);
+  switch(f.operator){
+    case 'equals': return normalizeStr(raw)===normalizeStr(f.value);
+    case 'contains': return normalizeStr(raw).includes(normalizeStr(f.value));
+    case 'gt': return !isNaN(numRaw) && !isNaN(numVal) && numRaw > numVal;
+    case 'lt': return !isNaN(numRaw) && !isNaN(numVal) && numRaw < numVal;
+    case 'gte': return !isNaN(numRaw) && !isNaN(numVal) && numRaw >= numVal;
+    case 'lte': return !isNaN(numRaw) && !isNaN(numVal) && numRaw <= numVal;
+    default: return true;
+  }
+}
+
+function applyFilters(data){
+  return data.filter(row=>{
+    if(activeFilters.length===0) return true;
+    return filterCombineMode==='OR'
+      ? activeFilters.some(f=> matchOneFilter(row,f))
+      : activeFilters.every(f=> matchOneFilter(row,f));
+  });
+}
+
+function renderTable(){
+  const head = document.getElementById('tableHead');
+  const body = document.getElementById('tableBody');
+
+  const cols = ['__select', '__id', ...mergedColumns, '__sources', '__actions'];
+  head.innerHTML = cols.map(c=>{
+    if(c==='__select') return `<th style="cursor:default;"></th>`;
+    if(c==='__actions') return `<th style="cursor:default;">Acciones</th>`;
+    let label = c==='__id' ? 'ID' : c==='__sources' ? 'Fuentes' : c;
+    let arrow = '';
+    if(sortState.col===c) arrow = sortState.dir===1 ? ' ▲' : ' ▼';
+    return `<th data-col="${escAttr(c)}">${escHtml(label)}<span class="sort-arrow">${arrow}</span></th>`;
+  }).join('');
+
+  head.querySelectorAll('th[data-col]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const col = th.dataset.col;
+      if(sortState.col===col) sortState.dir *= -1;
+      else { sortState.col=col; sortState.dir=1; }
+      renderTable();
+    });
+  });
+
+  let data = applyFilters(mergedData);
+
+  if(sortState.col){
+    const col = sortState.col;
+    data = [...data].sort((a,b)=>{
+      let va=a[col], vb=b[col];
+      if(col==='__sources'){ va=va.join(','); vb=vb.join(','); }
+      if(isEmpty(va) && isEmpty(vb)) return 0;
+      if(isEmpty(va)) return 1;
+      if(isEmpty(vb)) return -1;
+      const na=parseFloat(va), nb=parseFloat(vb);
+      if(!isNaN(na) && !isNaN(nb)) return (na-nb)*sortState.dir;
+      return String(va).localeCompare(String(vb)) * sortState.dir;
+    });
+  }
+
+  const totalRows = data.length;
+  const totalPages = Math.max(1, Math.ceil(totalRows/pageSize));
+  if(currentPage>totalPages) currentPage = totalPages;
+  if(currentPage<1) currentPage = 1;
+  const pageData = data.slice((currentPage-1)*pageSize, currentPage*pageSize);
+
+  body.innerHTML = pageData.map(row=>{
+    let html = '<tr>' + cols.map(col=>{
+      if(col==='__select') return `<td><input type="checkbox" class="row-select" data-id="${row.__id}" ${selectedRowIds.has(row.__id)?'checked':''}></td>`;
+      if(col==='__actions'){
+        const cluster = mergedClusters[row.__id-1];
+        const undoBtn = (cluster && cluster.length>1) ? `<button class="secondary btn-undo" data-id="${row.__id}" title="Separar en registros individuales">Deshacer</button>` : '';
+        const eyeBtn = `<button class="secondary btn-toggle-detail" data-id="${row.__id}" title="Ver registros originales">${expandedRowIds.has(row.__id)?'▲':'👁'}</button>`;
+        const status = rowStatus[row.__id];
+        const statusIcon = status==='ok' ? '✓' : status==='pendiente' ? '⏳' : status==='dudoso' ? '?' : '·';
+        const statusClass = status==='ok' ? 'status-ok' : status==='pendiente' ? 'status-pendiente' : status==='dudoso' ? 'status-dudoso' : 'status-none';
+        const hasComment = rowComments[row.__id] ? '💬' : '';
+        const commentBtn = `<button class="secondary btn-comment ${statusClass}" data-id="${row.__id}" title="${rowComments[row.__id]||'Agregar comentario / estado'}">${statusIcon}${hasComment}</button>`;
+        return `<td><div style="display:flex; gap:4px; flex-wrap:wrap;">${eyeBtn}${commentBtn}${undoBtn}</div></td>`;
+      }
+      if(col==='__id') return `<td>${row.__id}</td>`;
+      if(col==='__sources') return `<td class="sources-cell"><div class="source-chips">${row.__sources.map(s=>sourceChip(s)).join('')}</div></td>`;
+      const conflict = conflictsMap[row.__id] && conflictsMap[row.__id][col];
+      const override = conflictResolutions[row.__id] && conflictResolutions[row.__id][col];
+      if(conflict){
+        if(override!==undefined){
+          return `<td class="resolved-cell" data-id="${row.__id}" data-col="${escAttr(col)}"><span class="resolved-value" data-id="${row.__id}" data-col="${escAttr(col)}" title="Click para cambiar">${escHtml(override)} ✓</span></td>`;
+        }
+        const tooltip = conflict.map(c=>`${c.source}: ${c.value}`).join(' | ');
+        return `<td class="conflict-cell" data-id="${row.__id}" data-col="${escAttr(col)}" data-tooltip="${escAttr(tooltip)}"><span class="conflict-value" data-id="${row.__id}" data-col="${escAttr(col)}" title="Click para elegir un valor">${escHtml(row[col])} ⚠</span></td>`;
+      }
+      if(override!==undefined){
+        return `<td class="edited-cell" data-id="${row.__id}" data-col="${escAttr(col)}" title="Editado a mano · doble click para cambiar">${escHtml(override)} ✎</td>`;
+      }
+      const val = row[col];
+      const info = mergedColInfo[normalizeStr(col).replace(/[_\s]/g,'')];
+      const warning = info && checkFormatWarning(val, info.field);
+      if(warning){
+        // intentar generar una sugerencia de corrección automática
+        let suggestion = '';
+        if(info.field==='email') suggestion = suggestEmailFix(val)||'';
+        if(info.field==='telefono') suggestion = suggestPhoneFix(val)||'';
+        const tooltip = warning + (suggestion ? ` · Sugerencia: ${suggestion}` : '');
+        const badge = suggestion
+          ? `<button class="secondary" style="font-size:10px;padding:1px 6px;" onclick="event.stopPropagation(); const r=mergedData.find(r=>r.__id===${row.__id}); if(r){if(!conflictResolutions[${row.__id}])conflictResolutions[${row.__id}]={};conflictResolutions[${row.__id}]['${col.replace(/'/g,"\\'")}']='${suggestion.replace(/'/g,"\\'")}';renderTable();}">→ ${escHtml(suggestion)}</button>`
+          : '';
+        return `<td class="format-warning-cell" data-id="${row.__id}" data-col="${escAttr(col)}" data-tooltip="${escAttr(tooltip)}" title="${escAttr(tooltip)} · Doble click para editar">${escHtml(val)} ?${badge}</td>`;
+      }
+      if(isEmpty(val)) return `<td class="empty-cell" data-id="${row.__id}" data-col="${escAttr(col)}" title="Doble click para completar">—</td>`;
+      return `<td data-id="${row.__id}" data-col="${escAttr(col)}" title="Doble click para editar">${escHtml(val)}</td>`;
+    }).join('') + '</tr>';
+    if(expandedRowIds.has(row.__id)){
+      const cluster = mergedClusters[row.__id-1] || [];
+      const cards = cluster.map(g=>{
+        const fields = Object.entries(g.data).filter(([k,v])=>!isEmpty(v))
+          .map(([k,v])=>`<div class="candidate-field"><span class="k">${escHtml(k)}:</span> ${escHtml(v)}</div>`).join('');
+        return `<div class="candidate-record"><div class="candidate-source">${escHtml(g.sourceName)}</div>${fields}</div>`;
+      }).join('');
+      html += `<tr class="detail-row"><td colspan="${cols.length}">
+        <div class="small-note" style="margin:0 0 6px;">Registros originales que forman esta persona (antes de la fusión):</div>
+        <div class="detail-cards">${cards}</div>
+      </td></tr>`;
+    }
+    return html;
+  }).join('');
+
+  if(pageData.length===0){
+    body.innerHTML = `<tr><td colspan="${cols.length}" style="text-align:center; color:var(--text-dim); padding:30px;">Sin resultados para los filtros aplicados.</td></tr>`;
+  }
+
+  body.querySelectorAll('.row-select').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      const id = parseInt(e.target.dataset.id, 10);
+      if(e.target.checked) selectedRowIds.add(id);
+      else selectedRowIds.delete(id);
+      renderManualEditBar();
+    });
+  });
+  body.querySelectorAll('.btn-undo').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      undoMergeRow(parseInt(e.target.dataset.id, 10));
+    });
+  });
+  body.querySelectorAll('.btn-toggle-detail').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      const id = parseInt(e.target.dataset.id, 10);
+      if(expandedRowIds.has(id)) expandedRowIds.delete(id);
+      else expandedRowIds.add(id);
+      renderTable();
+    });
+  });
+  body.querySelectorAll('.btn-comment').forEach(btn=>{
+    btn.addEventListener('click', e=>{
+      openCommentPopover(btn, parseInt(btn.dataset.id, 10));
+    });
+  });
+  body.querySelectorAll('.conflict-value, .resolved-value').forEach(el=>{
+    el.addEventListener('click', e=> openConflictPicker(e.target));
+  });
+  if(!body.dataset.dblclickBound){
+    body.addEventListener('dblclick', e=>{
+      const td = e.target.closest('td[data-col]');
+      if(!td || td.querySelector('input,select')) return;
+      openCellEditor(td);
+    });
+    body.dataset.dblclickBound = '1';
+  }
+
+  renderManualEditBar();
+  renderPagination(totalRows, totalPages);
+  if(globalSearchTerm) highlightSearchInTable();
+}
+
+/* ============================================================
+   BÚSQUEDA CON RESALTADO (highlight en lugar de ocultar filas)
+============================================================ */
+function highlightSearchInTable(){
+  const term = globalSearchTerm;
+  if(!term){ updateSearchCount(0); return; }
+  const termNorm = normalizeStr(term);
+  const body = document.getElementById('tableBody');
+  let totalHits = 0;
+
+  // Para cada celda de texto (td con texto visible, no las de acciones ni checkboxes)
+  body.querySelectorAll('td').forEach(td=>{
+    if(td.querySelector('input,select,button.btn-undo,button.btn-toggle-detail,button.btn-comment')) return;
+    const text = td.textContent;
+    if(!text.trim()) return;
+    const normText = normalizeStr(text);
+    if(!normText.includes(termNorm)) return;
+
+    // Resaltar todas las ocurrencias manteniendo el HTML original intacto
+    const highlighted = highlightText(text, term);
+    if(highlighted !== null){
+      td.innerHTML = highlighted;
+      totalHits += td.querySelectorAll('mark.search-hit').length;
+    }
+  });
+
+  // Numerar los hits globalmente para poder navegar
+  let idx = 0;
+  body.querySelectorAll('mark.search-hit').forEach(m=>{
+    idx++;
+    m.dataset.hitIdx = idx;
+  });
+  updateSearchCount(idx);
+  highlightCurrentHit();
+}
+
+// Escapa regex y hace match insensitive a tildes/mayúsculas
+function buildSearchRegex(term){
+  // Normaliza el término buscado y cada carácter del texto por separado
+  // para permitir buscar "garcia" y encontrar "García"
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  try{ return new RegExp(escaped,'gi'); } catch(e){ return null; }
+}
+
+function highlightText(text, term){
+  // Separar en nodos de texto y resaltar las coincidencias
+  const termNorm = normalizeStr(term);
+  const textNorm = normalizeStr(text);
+  if(!textNorm.includes(termNorm)) return null;
+
+  // Mapear posiciones del texto normalizado de vuelta al texto original
+  // (los dos tienen la misma longitud porque normalizeStr opera char a char)
+  const result = [];
+  let i = 0;
+  const tl = termNorm.length;
+  while(i < textNorm.length){
+    const found = textNorm.indexOf(termNorm, i);
+    if(found === -1){
+      result.push(escHtml(text.slice(i)));
+      break;
+    }
+    result.push(escHtml(text.slice(i, found)));
+    result.push(`<mark class="search-hit">${escHtml(text.slice(found, found+tl))}</mark>`);
+    i = found + tl;
+  }
+  return result.join('');
+}
+
+function updateSearchCount(total){
+  const el = document.getElementById('searchCount');
+  const prevBtn = document.getElementById('searchPrev');
+  const nextBtn = document.getElementById('searchNext');
+  if(!el) return;
+  if(!globalSearchTerm){ el.textContent=''; el.className='search-count'; prevBtn.disabled=true; nextBtn.disabled=true; return; }
+  if(total===0){
+    el.textContent='Sin resultados';
+    el.className='search-count no-results';
+    prevBtn.disabled=true; nextBtn.disabled=true;
+  } else {
+    el.textContent=`${Math.min(searchCurrentHit,total)} / ${total}`;
+    el.className='search-count has-results';
+    prevBtn.disabled=false; nextBtn.disabled=false;
+  }
+}
+
+function highlightCurrentHit(){
+  const all = document.querySelectorAll('mark.search-hit');
+  if(!all.length) return;
+  const total = all.length;
+  if(searchCurrentHit<1) searchCurrentHit = total;
+  if(searchCurrentHit>total) searchCurrentHit = 1;
+  all.forEach((m,i)=> m.classList.toggle('current', i+1===searchCurrentHit));
+  const current = document.querySelector('mark.search-hit.current');
+  if(current && current.scrollIntoView) current.scrollIntoView({block:'nearest', behavior:'smooth'});
+  updateSearchCount(total);
+}
+
+function navigateHit(dir){
+  searchCurrentHit += dir;
+  highlightCurrentHit();
+}
+
+// Controles de paginación: tamaño de página + navegación.
+function renderPagination(totalRows, totalPages){
+  const el = document.getElementById('pagination');
+  if(totalRows===0){ el.innerHTML=''; return; }
+  el.innerHTML = `
+    <div class="filter-group">
+      <label>Filas por página</label>
+      <select id="pageSizeSelect">
+        <option value="25">25</option>
+        <option value="50">50</option>
+        <option value="100">100</option>
+        <option value="250">250</option>
+        <option value="999999">Todas</option>
+      </select>
+    </div>
+    <div class="pagination-controls">
+      <button class="secondary" id="btnPrevPage" ${currentPage<=1?'disabled':''}>← Anterior</button>
+      <span class="small-note" style="margin:0;">Página ${currentPage} de ${totalPages} (${totalRows} fila${totalRows===1?'':'s'})</span>
+      <button class="secondary" id="btnNextPage" ${currentPage>=totalPages?'disabled':''}>Siguiente →</button>
+    </div>
+  `;
+  document.getElementById('pageSizeSelect').value = String(pageSize);
+  document.getElementById('pageSizeSelect').addEventListener('change', e=>{
+    pageSize = parseInt(e.target.value, 10);
+    currentPage = 1;
+    renderTable();
+  });
+  document.getElementById('btnPrevPage').addEventListener('click', ()=>{ currentPage--; renderTable(); });
+  document.getElementById('btnNextPage').addEventListener('click', ()=>{ currentPage++; renderTable(); });
+}
+
+
+// Edición libre de cualquier celda (doble click): permite corregir un valor a mano,
+// completar una celda vacía, o sobrescribir un valor con formato raro.
+/* ============================================================
+   HISTORIAL DE CAMBIOS (undo / redo)
+   Guardamos snapshots antes de cada edición manual o fusión.
+   Ctrl+Z / Cmd+Z para deshacer, Ctrl+Y / Cmd+Shift+Z para rehacer.
+============================================================ */
+function snapshotState(){
+  editHistory.push({
+    conflictResolutions: JSON.parse(JSON.stringify(conflictResolutions)),
+    cellEdits: JSON.parse(JSON.stringify(cellEdits)),
+    rowComments: JSON.parse(JSON.stringify(rowComments)),
+    rowStatus: JSON.parse(JSON.stringify(rowStatus)),
+    mergedData: JSON.parse(JSON.stringify(mergedData)),
+    mergedClusters: JSON.parse(JSON.stringify(mergedClusters)),
+  });
+  if(editHistory.length > 50) editHistory.shift(); // cap de 50 pasos
+  editFuture = []; // una nueva acción borra el redo
+  renderUndoRedoBar();
+}
+
+function applySnapshot(snap){
+  conflictResolutions = snap.conflictResolutions;
+  cellEdits = snap.cellEdits;
+  rowComments = snap.rowComments;
+  rowStatus = snap.rowStatus;
+  mergedData = snap.mergedData;
+  mergedClusters = snap.mergedClusters;
+  renderResults();
+}
+
+function undoEdit(){
+  if(!editHistory.length) return;
+  // guardar estado actual en redo antes de revertir
+  editFuture.push({
+    conflictResolutions: JSON.parse(JSON.stringify(conflictResolutions)),
+    cellEdits: JSON.parse(JSON.stringify(cellEdits)),
+    rowComments: JSON.parse(JSON.stringify(rowComments)),
+    rowStatus: JSON.parse(JSON.stringify(rowStatus)),
+    mergedData: JSON.parse(JSON.stringify(mergedData)),
+    mergedClusters: JSON.parse(JSON.stringify(mergedClusters)),
+  });
+  applySnapshot(editHistory.pop());
+}
+
+function redoEdit(){
+  if(!editFuture.length) return;
+  editHistory.push({
+    conflictResolutions: JSON.parse(JSON.stringify(conflictResolutions)),
+    cellEdits: JSON.parse(JSON.stringify(cellEdits)),
+    rowComments: JSON.parse(JSON.stringify(rowComments)),
+    rowStatus: JSON.parse(JSON.stringify(rowStatus)),
+    mergedData: JSON.parse(JSON.stringify(mergedData)),
+    mergedClusters: JSON.parse(JSON.stringify(mergedClusters)),
+  });
+  applySnapshot(editFuture.pop());
+}
+
+document.addEventListener('keydown', e=>{
+  const active = document.activeElement;
+  if(active && (active.tagName==='INPUT'||active.tagName==='TEXTAREA'||active.tagName==='SELECT'||active.isContentEditable)) return;
+  if((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key==='z'){ e.preventDefault(); undoEdit(); }
+  if((e.ctrlKey||e.metaKey) && (e.key==='y' || (e.shiftKey && e.key==='z'))){ e.preventDefault(); redoEdit(); }
+});
+
+function renderUndoRedoBar(){
+  const bar = document.getElementById('undoRedoBar');
+  if(!bar) return;
+  bar.innerHTML = `
+    <button class="secondary" id="btnUndo" ${!editHistory.length?'disabled':''} title="Deshacer último cambio (Ctrl+Z)">↩ Deshacer (${editHistory.length})</button>
+    <button class="secondary" id="btnRedo" ${!editFuture.length?'disabled':''} title="Rehacer (Ctrl+Y)">↪ Rehacer (${editFuture.length})</button>
+  `;
+  document.getElementById('btnUndo').addEventListener('click', undoEdit);
+  document.getElementById('btnRedo').addEventListener('click', redoEdit);
+}
+
+/* ============================================================
+   COMENTARIOS Y ESTADO POR FILA
+============================================================ */
+function openCommentPopover(anchor, id){
+  document.getElementById('commentPopover')?.remove();
+  const pop = document.createElement('div');
+  pop.id = 'commentPopover';
+  pop.className = 'comment-popover';
+  const statuses = [{v:'',l:'Sin estado'},{v:'ok',l:'✓ Verificado'},{v:'pendiente',l:'⏳ Pendiente'},{v:'dudoso',l:'? Dudoso'}];
+  const curStatus = rowStatus[id]||'';
+  const curComment = rowComments[id]||'';
+  pop.innerHTML = `
+    <div class="comment-popover-title">Fila #${id}</div>
+    <div class="filter-group" style="margin-bottom:10px;">
+      <label>Estado</label>
+      <select id="commentStatusSel">
+        ${statuses.map(s=>`<option value="${s.v}" ${curStatus===s.v?'selected':''}>${s.l}</option>`).join('')}
+      </select>
+    </div>
+    <div class="filter-group">
+      <label>Comentario</label>
+      <textarea id="commentText" rows="3" style="width:100%; resize:vertical; font-size:12px; padding:6px 8px;">${escHtml(curComment)}</textarea>
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="primary" id="commentSave" style="flex:1;">Guardar</button>
+      <button class="secondary" id="commentCancel">Cancelar</button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+  const rect = anchor.getBoundingClientRect();
+  pop.style.top = (window.scrollY + rect.bottom + 6)+'px';
+  pop.style.left = Math.max(8, rect.left - 160)+'px';
+
+  pop.querySelector('#commentSave').addEventListener('click', ()=>{
+    snapshotState();
+    const newStatus = pop.querySelector('#commentStatusSel').value;
+    const newComment = pop.querySelector('#commentText').value.trim();
+    if(newStatus) rowStatus[id]=newStatus; else delete rowStatus[id];
+    if(newComment) rowComments[id]=newComment; else delete rowComments[id];
+    pop.remove();
+    renderTable();
+  });
+  pop.querySelector('#commentCancel').addEventListener('click', ()=> pop.remove());
+
+  setTimeout(()=>{
+    document.addEventListener('mousedown', function outsideClick(e){
+      if(!pop.contains(e.target) && e.target!==anchor){
+        pop.remove();
+        document.removeEventListener('mousedown', outsideClick);
+      }
+    });
+  }, 0);
+}
+
+function openCellEditor(td){
+  const id = parseInt(td.dataset.id, 10);
+  const col = td.dataset.col;
+  const row = mergedData.find(r=>r.__id===id);
+  if(!row) return;
+  const current = getResolvedValue(row, col);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'conflict-picker';
+  input.value = isEmpty(current) ? '' : current;
+  td.innerHTML = '';
+  td.appendChild(input);
+  input.focus();
+  input.select();
+
+  input.addEventListener('keydown', e=>{
+    if(e.key==='Enter') input.blur();
+    if(e.key==='Escape'){ input.dataset.cancel='1'; input.blur(); }
+  });
+  input.addEventListener('blur', ()=>{
+    if(input.dataset.cancel){ renderTable(); return; }
+    const newVal = typeof input.value==='string' ? input.value.toUpperCase() : input.value;
+    const original = row[col];
+    const originalStr = isEmpty(original) ? '' : String(original).toUpperCase();
+    if(newVal === getResolvedValue(row, col)) { renderTable(); return; }
+    snapshotState();
+    if(newVal===originalStr){
+      if(conflictResolutions[id]) delete conflictResolutions[id][col];
+      delete cellEdits[`${id}::${col}`];
+    } else {
+      if(!conflictResolutions[id]) conflictResolutions[id] = {};
+      conflictResolutions[id][col] = newVal;
+      cellEdits[`${id}::${col}`] = newVal;
+    }
+    renderTable();
+  });
+}
+
+// Reemplaza una celda con conflicto por un <select> para elegir manualmente
+// qué valor de las distintas bases queda como definitivo (o escribir uno propio).
+function openConflictPicker(target){
+  const id = parseInt(target.dataset.id, 10);
+  const col = target.dataset.col;
+  const conflict = conflictsMap[id] && conflictsMap[id][col];
+  if(!conflict) return;
+  const cell = target.closest('td');
+  const currentRes = conflictResolutions[id] && conflictResolutions[id][col];
+
+  const seen = new Set();
+  const options = [{value:'__auto__', label:'— automático (sin resolver) —'}];
+  conflict.forEach(c=>{
+    const key = String(c.value);
+    if(seen.has(key)) return;
+    seen.add(key);
+    options.push({value:key, label:`${c.value}  ·  ${c.source}`});
+  });
+  options.push({value:'__custom__', label:'✏️ Escribir otro valor...'});
+
+  const select = document.createElement('select');
+  select.className = 'conflict-picker';
+  options.forEach(o=>{
+    const opt = document.createElement('option');
+    opt.value = o.value; opt.textContent = o.label;
+    select.appendChild(opt);
+  });
+  if(currentRes!==undefined) select.value = seen.has(String(currentRes)) ? String(currentRes) : '__custom__';
+  else select.value = '__auto__';
+
+  cell.innerHTML = '';
+  cell.appendChild(select);
+  select.focus();
+
+  select.addEventListener('change', ()=>{
+    if(select.value==='__auto__'){
+      snapshotState();
+      if(conflictResolutions[id]) delete conflictResolutions[id][col];
+      renderTable();
+      return;
+    }
+    if(select.value==='__custom__'){
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.className = 'conflict-picker';
+      input.value = currentRes!==undefined ? currentRes : '';
+      cell.innerHTML = '';
+      cell.appendChild(input);
+      input.focus();
+      input.select();
+      input.addEventListener('keydown', e=>{ if(e.key==='Enter') input.blur(); });
+      input.addEventListener('blur', ()=>{
+        snapshotState();
+        if(!conflictResolutions[id]) conflictResolutions[id] = {};
+        conflictResolutions[id][col] = typeof input.value==='string' ? input.value.toUpperCase() : input.value;
+        renderTable();
+      });
+      return;
+    }
+    snapshotState();
+    if(!conflictResolutions[id]) conflictResolutions[id] = {};
+    const chosen = select.value;
+    conflictResolutions[id][col] = typeof chosen==='string' ? chosen.toUpperCase() : chosen;
+    renderTable();
+  });
+  select.addEventListener('blur', ()=>{
+    setTimeout(()=>{ if(document.body.contains(select)) renderTable(); }, 120);
+  });
+}
+
+
+function renderManualEditBar(){
+  const bar = document.getElementById('manualEditBar');
+  const n = selectedRowIds.size;
+  if(n===0){
+    bar.innerHTML = `<div class="small-note" style="margin:0;">Tildá dos o más filas para fusionarlas o compararlas. "Deshacer" en una fila la separa en sus registros originales.</div>`;
+    return;
+  }
+  const compareBtn = n===2 ? `<button class="secondary" id="btnCompareRows">👁 Comparar lado a lado</button>` : '';
+  bar.innerHTML = `
+    <span class="small-note" style="margin:0;">${n} fila${n>1?'s':''} seleccionada${n>1?'s':''}</span>
+    <button class="primary" id="btnMergeSelected" ${n<2?'disabled':''}>Fusionar seleccionadas →</button>
+    ${compareBtn}
+    <button class="secondary" id="btnClearSelection">Cancelar selección</button>
+  `;
+  const btnMerge = document.getElementById('btnMergeSelected');
+  if(btnMerge) btnMerge.addEventListener('click', mergeSelectedRows);
+  const btnCompare = document.getElementById('btnCompareRows');
+  if(btnCompare) btnCompare.addEventListener('click', openCompareModal);
+  document.getElementById('btnClearSelection').addEventListener('click', ()=>{
+    selectedRowIds = new Set();
+    renderTable();
+  });
+}
+
+/* ============================================================
+   COMPARACIÓN LADO A LADO DE DOS FILAS
+============================================================ */
+function openCompareModal(){
+  const ids = [...selectedRowIds];
+  if(ids.length!==2) return;
+  const rowA = mergedData.find(r=>r.__id===ids[0]);
+  const rowB = mergedData.find(r=>r.__id===ids[1]);
+  if(!rowA||!rowB) return;
+
+  const allCols = mergedColumns;
+  let sameCount=0, diffCount=0;
+
+  const rows = allCols.map(col=>{
+    const vA = getResolvedValue(rowA, col);
+    const vB = getResolvedValue(rowB, col);
+    const bothEmpty = isEmpty(vA) && isEmpty(vB);
+    if(bothEmpty) return null; // skip columns empty in both
+    const same = !isEmpty(vA) && !isEmpty(vB) &&
+      normalizeStr(String(vA)) === normalizeStr(String(vB));
+    if(same) sameCount++; else if(!bothEmpty) diffCount++;
+    return {col, vA, vB, same};
+  }).filter(Boolean);
+
+  const nameA = rowA.__sources.join(', ');
+  const nameB = rowB.__sources.join(', ');
+
+  const tbody = rows.map(r=>`
+    <tr class="${r.same?'compare-row-same':'compare-row-diff'}">
+      <td class="col-label">${escHtml(r.col)}</td>
+      <td>${isEmpty(r.vA)?'<span style="color:var(--text-dim)">—</span>':escHtml(r.vA)}</td>
+      <td>${isEmpty(r.vB)?'<span style="color:var(--text-dim)">—</span>':escHtml(r.vB)}</td>
+      <td style="text-align:center;">${r.same
+        ? '<span class="compare-same-badge">igual</span>'
+        : '<span class="compare-diff-badge">distinto</span>'
+      }</td>
+    </tr>`).join('');
+
+  document.getElementById('compareBody').innerHTML = `
+    <div style="margin-bottom:10px; font-size:12px; color:var(--text-dim); font-family:var(--mono);">
+      <span class="compare-same-badge">${sameCount} coincidencias</span>
+      <span class="compare-diff-badge" style="margin-left:8px;">${diffCount} diferencias</span>
+    </div>
+    <table class="compare-table">
+      <thead><tr>
+        <th>Columna</th>
+        <th class="source-header"><div class="source-chips">${rowA.__sources.map(sourceChip).join('')}</div></th>
+        <th class="source-header"><div class="source-chips">${rowB.__sources.map(sourceChip).join('')}</div></th>
+        <th></th>
+      </tr></thead>
+      <tbody>${tbody}</tbody>
+    </table>`;
+
+  document.getElementById('compareModal').classList.remove('hidden');
+}
+
+document.getElementById('compareClose').addEventListener('click', ()=> document.getElementById('compareModal').classList.add('hidden'));
+document.getElementById('compareClose2').addEventListener('click', ()=> document.getElementById('compareModal').classList.add('hidden'));
+document.getElementById('compareModal').addEventListener('click', e=>{
+  if(e.target===document.getElementById('compareModal')) document.getElementById('compareModal').classList.add('hidden');
+});
+document.getElementById('compareMergeBtn').addEventListener('click', ()=>{
+  document.getElementById('compareModal').classList.add('hidden');
+  mergeSelectedRows();
+});
+
+/* ============================================================
+   EXPORT
+============================================================ */
+function getExportCols(){
+  return ['__id', ...exportColumns.filter(c=>exportColumnEnabled[c]), '__sources'];
+}
+function exportLabel(col){
+  return col==='__id' ? 'ID' : col==='__sources' ? 'Fuentes' : col;
+}
+function buildCsv(data, cols){
+  const headers = cols.map(exportLabel);
+  const lines = [headers.map(csvEscape).join(',')];
+  data.forEach(row=>{
+    lines.push(cols.map(col=>{
+      if(col==='__sources') return csvEscape(row.__sources.join(' + '));
+      if(col==='__id') return csvEscape(row.__id);
+      const v = getResolvedValue(row, col);
+      return csvEscape(isEmpty(v)?'':v);
+    }).join(','));
+  });
+  return lines.join('\n');
+}
+
+document.getElementById('btnExportCsv').addEventListener('click', ()=>{
+  const data = applyFilters(mergedData);
+  downloadBlob(buildCsv(data, getExportCols()), 'fusion_resultado.csv', 'text/csv;charset=utf-8;');
+});
+
+document.getElementById('btnExportXlsx').addEventListener('click', ()=>{
+  const data = applyFilters(mergedData);
+  const cols = getExportCols();
+  const headers = cols.map(exportLabel);
+  const rows = data.map(row=>{
+    const obj = {};
+    cols.forEach((col,i)=>{
+      if(col==='__sources') obj[headers[i]] = row.__sources.join(' + ');
+      else if(col==='__id') obj[headers[i]] = row.__id;
+      else obj[headers[i]] = isEmpty(getResolvedValue(row,col)) ? '' : getResolvedValue(row,col);
+    });
+    return obj;
+  });
+  const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Fusión');
+  XLSX.writeFile(wb, 'fusion_resultado.xlsx');
+});
+
+document.getElementById('btnExportNew').addEventListener('click', ()=>{
+  if(!referenceSourceName){
+    alert('Elegí una "Base de referencia" más arriba para poder exportar solo los registros que no están en ella.');
+    return;
+  }
+  const data = applyFilters(mergedData).filter(row=> !row.__sources.includes(referenceSourceName));
+  if(data.length===0){
+    alert(`No hay personas nuevas respecto a "${referenceSourceName}" con los filtros actuales.`);
+    return;
+  }
+  downloadBlob(buildCsv(data, getExportCols()), 'fusion_nuevos.csv', 'text/csv;charset=utf-8;');
+});
+
+document.getElementById('btnExportAudit').addEventListener('click', ()=>{
+  const lines = [['ID_resultado','Fuente','Resumen_registro_original','Motivo_de_fusion'].map(csvEscape).join(',')];
+  mergedClusters.forEach((group, i)=>{
+    const id = i+1;
+    const strongIds = group.map(g=> mergedRowToStrongCluster[g.idx]);
+    const counts = {};
+    strongIds.forEach(sid=> counts[sid]=(counts[sid]||0)+1);
+    group.forEach((g, gi)=>{
+      const sid = strongIds[gi];
+      let motivo;
+      if(group.length===1){
+        motivo = 'Registro único (sin coincidencias)';
+      } else if(counts[sid]>1){
+        motivo = 'Coincide por email / teléfono / DNI-CUIT';
+      } else {
+        const linked = strongIds.some((other,oi)=> oi!==gi && other!==sid &&
+          confirmedPairLinkSet.has([Math.min(sid,other),Math.max(sid,other)].join('_')));
+        motivo = linked ? 'Nombre confirmado en revisión' : 'Fusión manual';
+      }
+      const summary = Object.entries(g.data).filter(([k,v])=>!isEmpty(v)).slice(0,6).map(([k,v])=>`${k}=${v}`).join('; ');
+      lines.push([id, g.sourceName, summary, motivo].map(csvEscape).join(','));
+    });
+  });
+  downloadBlob(lines.join('\n'), 'auditoria_fusion.csv', 'text/csv;charset=utf-8;');
+});
+
+/* ============================================================
+   PROYECTO COMPLETO: guardar/abrir todo el estado (para pausar y retomar)
+============================================================ */
+document.getElementById('btnExportProject').addEventListener('click', ()=>{
+  const project = {
+    version: 1,
+    savedAt: new Date().toISOString(),
+    sources,
+    matchRules,
+    columnOverrides,
+    combineMultiValue, fuzzyThreshold, birthdateBoost, localityBoost,
+    strongClusters, candidatePairs, pairDecisions, candidatesShowAll,
+    mergedClusters, mergedData, conflictsMap,
+    mergedColumns, mergedColInfo, confirmedMatchesCount,
+    mergedRowToStrongCluster,
+    confirmedPairLinkSet: [...confirmedPairLinkSet],
+    conflictResolutions, cellEdits,
+    rowComments, rowStatus,
+    exportColumns, exportColumnEnabled, referenceSourceName,
+    activeFilters, filterCombineMode, globalSearchTerm, savedViews, sortState,
+    currentPage, pageSize,
+    selectedRowIds: [...selectedRowIds],
+    expandedRowIds: [...expandedRowIds]
+  };
+  const stamp = new Date().toISOString().slice(0,10);
+  downloadBlob(JSON.stringify(project), `proyecto_fusion_${stamp}.json`, 'application/json');
+});
+
+function rebuildAllRowsGlobal(){
+  allRowsGlobal = [];
+  sources.forEach((s, sIdx)=> s.rows.forEach(r=>
+    allRowsGlobal.push({ data:r, sourceIdx:sIdx, sourceName:s.name, idx: allRowsGlobal.length })
+  ));
+}
+function setSelectByValue(id, value){
+  const sel = document.getElementById(id);
+  if(sel && [...sel.options].some(o=>o.value===String(value))) sel.value = String(value);
+}
+
+document.getElementById('btnImportProjectTrigger').addEventListener('click', ()=>{
+  document.getElementById('projectFileInput').click();
+});
+
+document.getElementById('projectFileInput').addEventListener('change', async e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  await withLoading('Restaurando proyecto…', ()=> importProject(file));
+  e.target.value = '';
+});
+
+async function importProject(file){
+  const status = document.getElementById('projectStatus');
+  let text;
+  try{
+    text = await file.text();
+  } catch(err){
+    status.textContent = `Error al leer el archivo: ${err.message}`;
+    return;
+  }
+  try{
+    const project = JSON.parse(text);
+    if(!Array.isArray(project.sources) || !Array.isArray(project.matchRules)){
+      throw new Error('El archivo no parece ser un proyecto guardado por esta herramienta.');
+    }
+
+    sources = project.sources;
+    renderFileList();
+
+    matchRules = project.matchRules;
+    columnOverrides = project.columnOverrides || {};
+    combineMultiValue = project.combineMultiValue!==false;
+    fuzzyThreshold = project.fuzzyThreshold!=null ? project.fuzzyThreshold : 0.85;
+    birthdateBoost = project.birthdateBoost!=null ? project.birthdateBoost : 0.15;
+    localityBoost = project.localityBoost!=null ? project.localityBoost : 0.05;
+
+    renderMatchRulesUI();
+    renderColumnUnification();
+    document.getElementById('chkCombineMultiValue').checked = combineMultiValue;
+    setSelectByValue('fuzzyThresholdInput', Math.round(fuzzyThreshold*100));
+    setSelectByValue('birthdateBoostInput', Math.round(birthdateBoost*100));
+    setSelectByValue('localityBoostInput', Math.round(localityBoost*100));
+
+    rebuildAllRowsGlobal();
+    strongClusters = project.strongClusters || [];
+    candidatePairs = project.candidatePairs || [];
+    pairDecisions = project.pairDecisions || {};
+    candidatesShowAll = !!project.candidatesShowAll;
+
+    mergedClusters = project.mergedClusters || [];
+    mergedData = project.mergedData || [];
+    conflictsMap = project.conflictsMap || {};
+    mergedColumns = project.mergedColumns || [];
+    mergedColInfo = project.mergedColInfo || {};
+    confirmedMatchesCount = project.confirmedMatchesCount || 0;
+    mergedData.__confirmedMatches = confirmedMatchesCount;
+    mergedRowToStrongCluster = project.mergedRowToStrongCluster || {};
+    confirmedPairLinkSet = new Set(project.confirmedPairLinkSet || []);
+    conflictResolutions = project.conflictResolutions || {};
+    cellEdits = project.cellEdits || {};
+    rowComments = project.rowComments || {};
+    rowStatus = project.rowStatus || {};
+    editHistory = []; editFuture = [];
+    exportColumns = project.exportColumns && project.exportColumns.length ? project.exportColumns : [...mergedColumns];
+    exportColumnEnabled = project.exportColumnEnabled || {};
+    mergedColumns.forEach(c=>{ if(!(c in exportColumnEnabled)) exportColumnEnabled[c]=true; });
+    referenceSourceName = project.referenceSourceName || '';
+
+    activeFilters = project.activeFilters || [];
+    filterCombineMode = project.filterCombineMode || 'AND';
+    globalSearchTerm = project.globalSearchTerm || '';
+    savedViews = project.savedViews || [];
+    sortState = project.sortState || {col:null, dir:1};
+    currentPage = project.currentPage || 1;
+    pageSize = project.pageSize || 50;
+    selectedRowIds = new Set(project.selectedRowIds || []);
+    expandedRowIds = new Set(project.expandedRowIds || []);
+
+    renderCandidates();
+    renderResults();
+    showPanel(4);
+
+    const when = project.savedAt ? new Date(project.savedAt).toLocaleString('es-AR') : '';
+    status.textContent = `✓ Proyecto restaurado${when ? ' (guardado el '+when+')' : ''}.`;
+  } catch(err){
+    status.textContent = `Error al abrir el proyecto: ${err.message}`;
+  }
+}
+
+
+
+function csvEscape(v){
+  const s = String(v);
+  if(/[",\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+  return s;
+}
+function downloadBlob(content, filename, type){
+  const blob = new Blob([content], {type});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+</script>
+</body>
+</html>
