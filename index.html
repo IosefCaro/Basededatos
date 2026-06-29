@@ -1306,6 +1306,7 @@ function setLoginMode(mode){
   const togText = document.getElementById('loginToggleText');
   const togLink = document.getElementById('loginToggleLink');
   const forgot  = document.getElementById('loginForgotLink');
+  if(!title || !btn) return; // elementos no listos aún
   setLoginError(''); setLoginSuccess('');
 
   if(mode === 'login'){
@@ -1350,14 +1351,38 @@ document.getElementById('loginBtn').addEventListener('click', async ()=>{
   const btn   = document.getElementById('loginBtn');
 
   if(!email){ setLoginError('Ingresá tu email.'); return; }
+  if(loginMode === 'login' && !pass){ setLoginError('Ingresá tu contraseña.'); return; }
+
   btn.disabled = true; btn.textContent = 'Cargando…';
   setLoginError('');
 
   try {
     if(loginMode === 'login'){
-      if(!pass){ setLoginError('Ingresá tu contraseña.'); btn.disabled=false; btn.textContent='Entrar'; return; }
-      const { error: authErr } = await supa.auth.signInWithPassword({ email, password: pass });
+      const { data, error: authErr } = await supa.auth.signInWithPassword({ email, password: pass });
       if(authErr) throw authErr;
+      // onAuthStateChange toma el control — si no dispara, forzamos
+      if(data?.session){
+        const rol = await checkAuthorization(email);
+        if(!rol){
+          await supa.auth.signOut();
+          throw new Error('Tu cuenta no está autorizada. Solicitá acceso al administrador.');
+        }
+        currentUser    = data.session.user;
+        currentUserRol = rol;
+        updateUserPill(currentUser, rol);
+        hideLoginScreen();
+        if(!mergedData.length){
+          switchMode('import'); showImportStep(1);
+          const hasData = await loadProfilesFromStorage();
+          if(hasData){
+            exportColumns = [...mergedColumns];
+            exportColumnEnabled = {};
+            mergedColumns.forEach(c => exportColumnEnabled[c] = true);
+            renderResults();
+            switchMode('profiles');
+          }
+        }
+      }
 
     } else if(loginMode === 'request'){
       const { error } = await supa.from('solicitudes_acceso').insert({ email, nombre: name, mensaje: msg });
@@ -1371,7 +1396,8 @@ document.getElementById('loginBtn').addEventListener('click', async ()=>{
       setLoginSuccess('Link enviado. Revisá tu email (y spam).');
     }
   } catch(err){
-    setLoginError(err.message || 'Error. Intentá de nuevo.');
+    console.error('Login error:', err);
+    setLoginError(err.message || 'Error al conectar. Verificá tu conexión e intentá de nuevo.');
   } finally {
     btn.disabled = false;
     btn.textContent = loginMode==='login' ? 'Entrar' : loginMode==='request' ? 'Enviar solicitud' : 'Enviar link';
