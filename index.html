@@ -1617,10 +1617,19 @@
 const SUPA_URL = 'https://ukkdcovmghajzgfwlicc.supabase.co';
 const SUPA_KEY = 'sb_publishable_zZQYcH1yAS7NWFRw8ktmrQ_A1FtiFUb';
 // supa se inicializa en el script de auth; acá esperamos que esté listo
-let supa;
-window.addEventListener('authReady', ()=>{ supa = window._supa; });
-// Para funciones síncronas que necesiten supa antes del login:
-Object.defineProperty(window, 'supa', { get: ()=> window._supa });
+function getSupa(){
+  if(!window._supa) throw new Error('Supabase no inicializado aún. Iniciá sesión primero.');
+  return window._supa;
+}
+// Proxy transparente: cualquier código que llame supa.from(...) funciona igual
+const supaProxy = new Proxy({}, {
+  get(_, prop){ return (...args) => getSupa()[prop](...args); }
+});
+// Redefinir supa como getter para que siempre apunte al cliente real
+Object.defineProperty(window, 'supa', {
+  get(){ return window._supa || supaProxy; },
+  configurable: true
+});
 
 
 
@@ -1628,6 +1637,30 @@ Object.defineProperty(window, 'supa', { get: ()=> window._supa });
 /* ============================================================
    ESTADO GLOBAL
 ============================================================ */
+
+function setSyncStatus(state, msg=''){
+  let el = document.getElementById('syncStatus');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'syncStatus';
+    el.style.cssText = `position:fixed;bottom:12px;right:12px;z-index:9999;font-family:monospace;
+      font-size:11px;font-weight:600;padding:6px 12px;border-radius:4px;
+      display:flex;align-items:center;gap:6px;transition:opacity .4s;pointer-events:none;`;
+    document.body.appendChild(el);
+  }
+  const styles = {
+    saving:  { bg:'#ad7a35', color:'#fbf6ea', icon:'💾', text: msg||'Guardando…' },
+    ok:      { bg:'#2f6b52', color:'#fbf6ea', icon:'✓',  text: msg||'Guardado' },
+    loading: { bg:'#2f6b52', color:'#fbf6ea', icon:'⟳',  text: msg||'Cargando…' },
+    error:   { bg:'#b3402f', color:'#fbf6ea', icon:'✗',  text: msg||'Error al guardar' },
+  };
+  const s = styles[state] || styles.ok;
+  el.style.background = s.bg;
+  el.style.color = s.color;
+  el.innerHTML = `${s.icon} ${s.text}`;
+  el.style.opacity = '1';
+  if(state === 'ok') setTimeout(()=>{ el.style.opacity='0'; }, 2500);
+}
 let sources = []; // [{ name, ext, rows: [obj,...], columns: [..] }]
 let matchRules = []; // [{ id, label, mappings: {sourceIdx: columnName|null}, active: bool, type:'text'|'date'|'number'|'phone'|'dni' }]
 let mergedData = []; // resultado fusionado
@@ -1978,6 +2011,8 @@ document.getElementById('navImport').addEventListener('click', ()=>{ switchMode(
 // Se lanza en background; los errores muestran un badge rojo.
 async function saveProfilesToStorage(){
   if(!mergedData.length) return;
+  if(!window._supa){ console.warn('saveProfilesToStorage: supa no disponible'); return; }
+  const supa = window._supa;
   setSyncStatus('saving');
   try {
     // ── 1. sesion (singleton de columnas + fuentes) ──────────
@@ -2090,6 +2125,8 @@ async function saveProfilesToStorage(){
 
 // Carga todo el estado desde Supabase al iniciar.
 async function loadProfilesFromStorage(){
+  if(!window._supa){ setSyncStatus('error','Sin conexión'); return false; }
+  const supa = window._supa;
   setSyncStatus('loading', 'Cargando base…');
   try {
     // ── sesion ────────────────────────────────────────────────
