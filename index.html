@@ -3120,9 +3120,9 @@ function runMerge(){
   currentPage = 1;
   expandedRowIds = new Set();
   editHistory = []; editFuture = []; cellEdits = {};
-  rowComments = {}; rowStatus = {};
-  profileLinks = {}; profileNotes = {}; activeProfileId = null;
-  profileEvents = {}; profileGroups = {}; profileTimeline = {};
+  // NO resetear profileLinks, profileEvents, profileGroups, profileTimeline, rowComments, rowStatus
+  // — conservar datos enriquecidos existentes al re-importar
+  activeProfileId = null;
   exportColumns = [...mergedColumns];
   exportColumnEnabled = {};
   mergedColumns.forEach(c=> exportColumnEnabled[c]=true);
@@ -5669,19 +5669,36 @@ function downloadBlob(content, filename, type){
 }
 
 /* ============================================================
-   INICIO — la sesión la maneja onAuthStateChange
+   INICIO — escucha authReady del script de auth y carga datos
 ============================================================ */
-window.addEventListener('DOMContentLoaded', async ()=>{
+async function cargarDatosTrasLogin(){
   switchMode('import');
   showImportStep(1);
   try {
-    const { data: { session } } = await supa.auth.getSession();
-    if(!session) showLoginScreen();
-    // Si hay sesión, onAuthStateChange la detecta y carga los datos
+    const hasData = await loadProfilesFromStorage();
+    if(hasData){
+      exportColumns = [...mergedColumns];
+      exportColumnEnabled = {};
+      mergedColumns.forEach(c => exportColumnEnabled[c] = true);
+      renderResults();
+      switchMode('profiles');
+    }
   } catch(e){
-    console.error('Init error:', e);
-    showLoginScreen();
+    console.error('Error cargando datos:', e);
+    setSyncStatus('error', 'Error al cargar datos');
   }
+}
+
+// El script de auth dispara 'authReady' cuando el usuario se loguea
+window.addEventListener('authReady', ()=>{
+  cargarDatosTrasLogin();
+});
+
+// Al cargar la página, mostrar pantalla de importación vacía
+// (el script de auth mostrará el login si no hay sesión)
+document.addEventListener('DOMContentLoaded', ()=>{
+  switchMode('import');
+  showImportStep(1);
 });
 
 </script>
