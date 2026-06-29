@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fusión de Bases — Depurador de Registros</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
 <style>
@@ -1263,7 +1264,6 @@
   <footer>Procesamiento local · Base de datos: Supabase (ukkdcovmghajzgfwlicc)</footer>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 /* ============================================================
    SUPABASE — configuración
@@ -5722,19 +5722,19 @@ function downloadBlob(content, filename, type){
 
 /* ============================================================
    INICIO — la sesión la maneja onAuthStateChange
-   Mostramos login por defecto; si ya hay sesión activa,
-   el listener la detecta y oculta el login automáticamente.
 ============================================================ */
-(async function init(){
+window.addEventListener('DOMContentLoaded', async ()=>{
   switchMode('import');
   showImportStep(1);
-  // Verificar si ya hay sesión guardada (cookie/localStorage de Supabase Auth)
-  const { data: { session } } = await supa.auth.getSession();
-  if(!session){
+  try {
+    const { data: { session } } = await supa.auth.getSession();
+    if(!session) showLoginScreen();
+    // Si hay sesión, onAuthStateChange la detecta y carga los datos
+  } catch(e){
+    console.error('Init error:', e);
     showLoginScreen();
   }
-  // El resto lo maneja onAuthStateChange
-})();
+});
 
 </script>
 </body>
