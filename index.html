@@ -1264,455 +1264,366 @@
   <footer>Procesamiento local · Base de datos: Supabase (ukkdcovmghajzgfwlicc)</footer>
 </div>
 
+<!-- ═══ AUTH — script aislado, independiente del resto ═══ -->
+<script>
+(function(){
+  const SUPA_URL   = 'https://ukkdcovmghajzgfwlicc.supabase.co';
+  const SUPA_KEY   = 'sb_publishable_zZQYcH1yAS7NWFRw8ktmrQ_A1FtiFUb';
+  const ADMIN_EMAIL= 'info@iosefcaro.org';
+
+  // Esperar a que supabase esté disponible
+  function waitForSupabase(cb){
+    if(typeof supabase !== 'undefined') cb();
+    else setTimeout(()=>waitForSupabase(cb), 50);
+  }
+
+  waitForSupabase(function(){
+    const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+    window._supa = supa; // exponerlo globalmente para el script principal
+
+    let currentUser    = null;
+    let currentUserRol = null;
+    let loginMode      = 'login';
+
+    function el(id){ return document.getElementById(id); }
+    function show(id){ const e=el(id); if(e) e.style.display=''; }
+    function hide(id){ const e=el(id); if(e) e.style.display='none'; }
+    function showLoginScreen(){ const s=el('loginScreen'); if(s) s.style.display='flex'; }
+    function hideLoginScreen(){ const s=el('loginScreen'); if(s) s.style.display='none'; }
+
+    function setLoginError(msg){
+      const e=el('loginError'); if(!e) return;
+      e.textContent=msg; e.style.display=msg?'block':'none';
+      const s=el('loginSuccess'); if(s) s.style.display='none';
+    }
+    function setLoginSuccess(msg){
+      const e=el('loginSuccess'); if(!e) return;
+      e.textContent=msg; e.style.display=msg?'block':'none';
+      const er=el('loginError'); if(er) er.style.display='none';
+    }
+
+    function setLoginMode(mode){
+      loginMode = mode;
+      const fields = {
+        login:   { title:'Iniciar sesión', sub:'Acceso restringido — solo usuarios autorizados.', btn:'Entrar',
+                   show:['loginPassField'], hide:['loginNameField','loginMsgField'],
+                   togText:'¿Necesitás acceso?', togLink:' Solicitarlo', forgot:true },
+        request: { title:'Solicitar acceso', sub:'El administrador revisará tu solicitud.', btn:'Enviar solicitud',
+                   show:['loginNameField','loginMsgField'], hide:['loginPassField'],
+                   togText:'¿Ya tenés acceso?', togLink:' Iniciar sesión', forgot:false },
+        forgot:  { title:'Recuperar contraseña', sub:'Te enviamos un link por email.', btn:'Enviar link',
+                   show:[], hide:['loginPassField','loginNameField','loginMsgField'],
+                   togText:'', togLink:'← Volver', forgot:false },
+      };
+      const f = fields[mode]; if(!f) return;
+      setLoginError(''); setLoginSuccess('');
+      if(el('loginTitle')) el('loginTitle').textContent = f.title;
+      if(el('loginSub'))   el('loginSub').textContent   = f.sub;
+      if(el('loginBtn'))   el('loginBtn').textContent   = f.btn;
+      f.show.forEach(id=>{ const e=el(id); if(e){ e.style.display=''; e.classList.remove('hidden'); }});
+      f.hide.forEach(id=>{ const e=el(id); if(e){ e.style.display='none'; }});
+      if(el('loginToggleText')) el('loginToggleText').textContent = f.togText;
+      if(el('loginToggleLink')) el('loginToggleLink').textContent = f.togLink;
+      if(el('loginForgotLink')) el('loginForgotLink').style.display = f.forgot ? 'inline' : 'none';
+    }
+
+    async function checkAuthorization(email){
+      try {
+        const { data, error } = await supa.from('usuarios_autorizados')
+          .select('rol,estado').eq('email', email.toLowerCase()).single();
+        if(error || !data || data.estado !== 'activo') return null;
+        return data.rol;
+      } catch(e){ return null; }
+    }
+
+    function updateUserPill(user, rol){
+      const pill = el('userPill'); const avatar = el('userAvatar');
+      const emailEl = el('userEmail'); const adminBtn = el('btnAdminPanel');
+      if(user){
+        if(avatar) avatar.textContent = (user.email||'?').substring(0,2).toUpperCase();
+        if(emailEl) emailEl.textContent = user.email;
+        if(pill) pill.style.display = 'flex';
+        if(adminBtn) adminBtn.style.display = rol==='admin' ? 'inline-flex' : 'none';
+      } else {
+        if(pill) pill.style.display = 'none';
+        if(adminBtn) adminBtn.style.display = 'none';
+      }
+    }
+
+    async function doLogin(email, pass){
+      const { data, error } = await supa.auth.signInWithPassword({ email, password: pass });
+      if(error) throw error;
+      const rol = await checkAuthorization(email);
+      if(!rol){
+        await supa.auth.signOut();
+        throw new Error('Tu cuenta no está autorizada. Solicitá acceso al administrador.');
+      }
+      currentUser = data.session.user; currentUserRol = rol;
+      updateUserPill(currentUser, rol);
+      hideLoginScreen();
+      // Avisar al script principal que hay sesión
+      window.dispatchEvent(new CustomEvent('authReady', { detail:{ user: currentUser, rol } }));
+    }
+
+    // Botón login
+    document.addEventListener('DOMContentLoaded', function(){
+      setLoginMode('login');
+
+      el('loginToggleLink')?.addEventListener('click', ()=>{
+        setLoginMode(loginMode === 'login' ? 'request' : 'login');
+      });
+      el('loginForgotLink')?.addEventListener('click', ()=> setLoginMode('forgot'));
+
+      el('loginBtn')?.addEventListener('click', async function(){
+        const email = (el('loginEmail')?.value||'').trim().toLowerCase();
+        const pass  = (el('loginPass')?.value||'');
+        const name  = (el('loginName')?.value||'').trim();
+        const msg   = (el('loginMsg')?.value||'').trim();
+        const btn   = el('loginBtn');
+
+        if(!email){ setLoginError('Ingresá tu email.'); return; }
+        btn.disabled = true; btn.textContent = 'Cargando…';
+        setLoginError('');
+
+        try {
+          if(loginMode === 'login'){
+            if(!pass){ setLoginError('Ingresá tu contraseña.'); return; }
+            await doLogin(email, pass);
+
+          } else if(loginMode === 'request'){
+            const { error } = await supa.from('solicitudes_acceso')
+              .insert({ email, nombre: name, mensaje: msg });
+            if(error && error.code !== '23505') throw error;
+            setLoginSuccess('Solicitud enviada. El administrador revisará tu pedido.');
+            setLoginMode('login');
+
+          } else if(loginMode === 'forgot'){
+            const { error } = await supa.auth.resetPasswordForEmail(email,
+              { redirectTo: window.location.href });
+            if(error) throw error;
+            setLoginSuccess('Link enviado. Revisá tu email (y carpeta de spam).');
+          }
+        } catch(err){
+          setLoginError(err.message || 'Error al conectar. Revisá tu conexión.');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = loginMode==='login'?'Entrar':loginMode==='request'?'Enviar solicitud':'Enviar link';
+        }
+      });
+
+      ['loginEmail','loginPass'].forEach(id => {
+        el(id)?.addEventListener('keydown', e => { if(e.key==='Enter') el('loginBtn')?.click(); });
+      });
+
+      el('btnLogout')?.addEventListener('click', async ()=>{
+        await supa.auth.signOut();
+        currentUser = null; currentUserRol = null;
+        updateUserPill(null, null);
+        showLoginScreen();
+      });
+
+      // Verificar sesión existente al cargar
+      supa.auth.getSession().then(async ({ data:{ session } })=>{
+        if(session?.user){
+          const rol = await checkAuthorization(session.user.email);
+          if(rol){
+            currentUser = session.user; currentUserRol = rol;
+            updateUserPill(currentUser, rol);
+            hideLoginScreen();
+            window.dispatchEvent(new CustomEvent('authReady', { detail:{ user: currentUser, rol } }));
+          } else {
+            showLoginScreen();
+          }
+        } else {
+          showLoginScreen();
+        }
+      }).catch(()=> showLoginScreen());
+    });
+
+    // Exponer funciones necesarias por el panel admin del script principal
+    window._auth = {
+      getUser: ()=> currentUser,
+      getRol:  ()=> currentUserRol,
+      supa,
+    };
+
+    // Panel admin
+    window.openAdminPanel = function(){
+      if(currentUserRol !== 'admin'){ alert('Acceso denegado.'); return; }
+      const existing = document.getElementById('adminPanelOverlay');
+      if(existing) existing.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'adminPanelOverlay';
+      overlay.style.cssText = `position:fixed;inset:0;z-index:3000;background:rgba(43,40,32,0.55);
+        display:flex;align-items:center;justify-content:center;padding:20px;`;
+      overlay.innerHTML = `
+        <div style="background:var(--panel);border:1px solid var(--border);border-top:4px solid var(--accent);
+          border-radius:4px 4px 8px 8px;width:100%;max-width:720px;max-height:90vh;display:flex;flex-direction:column;">
+          <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+            <div>
+              <div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Panel administrador</div>
+              <div style="font-size:18px;font-weight:700;margin-top:2px;">Control de acceso</div>
+            </div>
+            <button onclick="document.getElementById('adminPanelOverlay').remove()"
+              style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text-dim);">&#x2715;</button>
+          </div>
+          <div style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;">
+            <button class="admin-tab active" data-tab="solicitudes"
+              style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;
+              padding:10px 16px;background:none;border:none;border-bottom:2px solid var(--accent);cursor:pointer;">&#128235; Solicitudes</button>
+            <button class="admin-tab" data-tab="usuarios"
+              style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;
+              padding:10px 16px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--text-dim);">&#128101; Usuarios</button>
+            <button class="admin-tab" data-tab="nuevo"
+              style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;
+              padding:10px 16px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--text-dim);">&#10133; Crear usuario</button>
+          </div>
+          <div id="adminPanelBody" style="flex:1;overflow-y:auto;padding:24px;"></div>
+        </div>`;
+      document.body.appendChild(overlay);
+      overlay.querySelectorAll('.admin-tab').forEach(tab => {
+        tab.addEventListener('click', ()=>{
+          overlay.querySelectorAll('.admin-tab').forEach(t=>{ t.style.borderBottomColor='transparent'; t.style.color='var(--text-dim)'; });
+          tab.style.borderBottomColor='var(--accent)'; tab.style.color='var(--text)';
+          renderAdminTab(tab.dataset.tab);
+        });
+      });
+      renderAdminTab('solicitudes');
+    };
+
+    async function renderAdminTab(tab){
+      const body = document.getElementById('adminPanelBody');
+      if(!body) return;
+      body.innerHTML = '<div style="color:var(--text-dim);font-size:13px;">Cargando&#8230;</div>';
+
+      function escH(s){ return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+      if(tab === 'solicitudes'){
+        const { data } = await supa.from('solicitudes_acceso').select('*').order('created_at',{ascending:false});
+        const pendientes = (data||[]).filter(s=>s.estado==='pendiente');
+        const resto = (data||[]).filter(s=>s.estado!=='pendiente');
+        body.innerHTML = `
+          <div style="font-size:13px;font-weight:600;margin-bottom:12px;">
+            Pendientes <span style="background:var(--conflict);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:6px;">${pendientes.length}</span>
+          </div>
+          ${pendientes.length===0 ? '<div style="color:var(--text-dim);font-size:13px;">Sin solicitudes pendientes.</div>' :
+            pendientes.map(s=>`
+              <div style="background:var(--panel-2);border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
+                <div>
+                  <div style="font-weight:600;">${escH(s.nombre||'Sin nombre')}</div>
+                  <div style="font-family:var(--mono);font-size:12px;color:var(--accent);">${escH(s.email)}</div>
+                  ${s.mensaje?`<div style="font-size:12px;color:var(--text-dim);margin-top:4px;">"${escH(s.mensaje)}"</div>`:''}
+                </div>
+                <div style="display:flex;gap:6px;">
+                  <button class="primary" data-action="aprobar" data-id="${s.id}" data-email="${escH(s.email)}" data-nombre="${escH(s.nombre||'')}"
+                    style="font-size:11px;padding:4px 12px;">&#10003; Aprobar</button>
+                  <button class="secondary" data-action="rechazar" data-id="${s.id}" data-email="${escH(s.email)}"
+                    style="font-size:11px;padding:4px 12px;">&#10007; Rechazar</button>
+                </div>
+              </div>`).join('')}
+          ${resto.length?`<details style="margin-top:16px;"><summary style="cursor:pointer;font-size:12px;color:var(--text-dim);">Historial (${resto.length})</summary>
+            <div style="margin-top:10px;">${resto.map(s=>`<div style="padding:8px;border-bottom:1px solid var(--border);font-size:13px;">${escH(s.email)} — <span style="color:var(--text-dim);">${s.estado}</span></div>`).join('')}</div></details>`:''}`;
+        body.querySelectorAll('[data-action]').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            const {action,id,email,nombre} = btn.dataset;
+            if(action==='aprobar'){
+              await supa.from('usuarios_autorizados').upsert({email:email.toLowerCase(),nombre:nombre||email,rol:'usuario',estado:'activo',creado_por:currentUser.email},{onConflict:'email'});
+              await supa.from('solicitudes_acceso').update({estado:'aprobada',revisado_por:currentUser.email}).eq('id',id);
+              alert('✓ '+email+' autorizado. Pedile que use "Olvidé mi contraseña" para crear su contraseña, o crealo desde "Crear usuario".');
+              renderAdminTab('solicitudes');
+            } else {
+              if(!confirm('¿Rechazar a '+email+'?')) return;
+              await supa.from('solicitudes_acceso').update({estado:'rechazada',revisado_por:currentUser.email}).eq('id',id);
+              renderAdminTab('solicitudes');
+            }
+          });
+        });
+
+      } else if(tab==='usuarios'){
+        const { data } = await supa.from('usuarios_autorizados').select('*').order('created_at',{ascending:false});
+        const items = data||[];
+        body.innerHTML = `<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">${items.length} usuarios</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="border-bottom:2px solid var(--border);">
+              <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">EMAIL</th>
+              <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">NOMBRE</th>
+              <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ROL</th>
+              <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ESTADO</th>
+              <th></th>
+            </tr></thead>
+            <tbody>${items.map(u=>`
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:8px;font-family:var(--mono);font-size:12px;">${escH(u.email)}</td>
+                <td style="padding:8px;">${escH(u.nombre||'—')}</td>
+                <td style="padding:8px;"><span style="font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;
+                  background:${u.rol==='admin'?'var(--accent)':'var(--panel-2)'};color:${u.rol==='admin'?'var(--panel)':'var(--text-dim)'};">${u.rol}</span></td>
+                <td style="padding:8px;"><span style="font-size:11px;padding:2px 8px;border-radius:3px;font-weight:600;
+                  color:${u.estado==='activo'?'var(--match)':u.estado==='bloqueado'?'var(--conflict)':'var(--accent-2)'};">${u.estado}</span></td>
+                <td style="padding:8px;text-align:right;">${u.email!==ADMIN_EMAIL?`
+                  <button data-uid="${u.id}" data-estado="${u.estado}" data-email="${escH(u.email)}" class="adm-u-btn secondary"
+                    style="font-size:11px;padding:3px 8px;margin-right:4px;">${u.estado==='activo'?'Bloquear':'Activar'}</button>
+                  <button data-uid="${u.id}" data-action="eliminar" data-email="${escH(u.email)}" class="adm-u-btn"
+                    style="font-size:11px;padding:3px 8px;background:var(--conflict);color:#fff;border:none;border-radius:3px;cursor:pointer;">Eliminar</button>
+                `:'<span style="font-size:11px;color:var(--text-dim);">Admin principal</span>'}</td>
+              </tr>`).join('')}</tbody></table>`;
+        body.querySelectorAll('.adm-u-btn').forEach(btn=>{
+          btn.addEventListener('click', async ()=>{
+            const {uid, estado, email, action} = btn.dataset;
+            if(action==='eliminar'){ if(!confirm('¿Eliminar a '+email+'?')) return; await supa.from('usuarios_autorizados').delete().eq('id',uid); }
+            else if(estado==='activo'){ if(!confirm('¿Bloquear a '+email+'?')) return; await supa.from('usuarios_autorizados').update({estado:'bloqueado'}).eq('id',uid); }
+            else { await supa.from('usuarios_autorizados').update({estado:'activo'}).eq('id',uid); }
+            renderAdminTab('usuarios');
+          });
+        });
+
+      } else if(tab==='nuevo'){
+        body.innerHTML = `<div style="max-width:380px;">
+          <div style="font-size:13px;color:var(--text-dim);margin-bottom:18px;">Creá un usuario directamente. Recibirá un email para confirmar su cuenta.</div>
+          ${['Email::newUserEmail::email','Nombre::newUserName::text'].map(f=>{const[l,i,t]=f.split('::');return`
+          <div style="margin-bottom:12px;"><label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px;">${l}</label>
+          <input id="${i}" type="${t}" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);"></div>`}).join('')}
+          <div style="margin-bottom:12px;"><label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px;">Rol</label>
+          <select id="newUserRol" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);">
+            <option value="usuario">Usuario</option><option value="admin">Administrador</option></select></div>
+          <div style="margin-bottom:18px;"><label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px;">Contraseña temporal</label>
+          <input id="newUserPass" type="password" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);" placeholder="Mínimo 6 caracteres"></div>
+          <button id="btnCrearUsuario" style="padding:10px 20px;background:var(--accent);color:var(--panel);border:none;border-radius:4px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;text-transform:uppercase;">Crear usuario</button>
+          <div id="newUserMsg" style="margin-top:12px;font-size:13px;"></div></div>`;
+        document.getElementById('btnCrearUsuario').addEventListener('click', async ()=>{
+          const email=(document.getElementById('newUserEmail').value||'').trim().toLowerCase();
+          const nombre=(document.getElementById('newUserName').value||'').trim();
+          const rol=document.getElementById('newUserRol').value;
+          const pass=document.getElementById('newUserPass').value;
+          const msg=document.getElementById('newUserMsg');
+          if(!email||!pass||pass.length<6){ msg.style.color='var(--conflict)'; msg.textContent='Email y contraseña (mín. 6 chars) requeridos.'; return; }
+          msg.style.color='var(--text-dim)'; msg.textContent='Creando…';
+          const {error:sErr} = await supa.auth.signUp({email,password:pass});
+          if(sErr&&!sErr.message.includes('already registered')){ msg.style.color='var(--conflict)'; msg.textContent='Error Auth: '+sErr.message; return; }
+          const {error:dErr} = await supa.from('usuarios_autorizados').upsert({email,nombre:nombre||email,rol,estado:'activo',creado_por:currentUser.email},{onConflict:'email'});
+          if(dErr){ msg.style.color='var(--conflict)'; msg.textContent='Error BD: '+dErr.message; return; }
+          msg.style.color='var(--match)'; msg.textContent='✓ '+email+' creado correctamente.';
+          document.getElementById('newUserEmail').value=''; document.getElementById('newUserName').value=''; document.getElementById('newUserPass').value='';
+        });
+      }
+    }
+  });
+})();
+</script>
+
 <script>
 /* ============================================================
-   SUPABASE — configuración
+   SUPABASE — configuración (referencia al cliente ya creado)
 ============================================================ */
 const SUPA_URL = 'https://ukkdcovmghajzgfwlicc.supabase.co';
 const SUPA_KEY = 'sb_publishable_zZQYcH1yAS7NWFRw8ktmrQ_A1FtiFUb';
-const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
+// supa se inicializa en el script de auth; acá esperamos que esté listo
+let supa;
+window.addEventListener('authReady', ()=>{ supa = window._supa; });
+// Para funciones síncronas que necesiten supa antes del login:
+Object.defineProperty(window, 'supa', { get: ()=> window._supa });
 
-/* ============================================================
-   AUTH — login / solicitud / admin
-============================================================ */
-const ADMIN_EMAIL = 'info@iosefcaro.org';
-let currentUser     = null;
-let currentUserRol  = null;
-let loginMode       = 'login'; // 'login' | 'request' | 'forgot'
 
-function showLoginScreen(){ document.getElementById('loginScreen').style.display = 'flex'; }
-function hideLoginScreen(){ document.getElementById('loginScreen').style.display = 'none'; }
 
-function setLoginError(msg){
-  const el = document.getElementById('loginError');
-  el.textContent = msg; el.style.display = msg ? 'block' : 'none';
-  document.getElementById('loginSuccess').style.display = 'none';
-}
-function setLoginSuccess(msg){
-  const el = document.getElementById('loginSuccess');
-  el.textContent = msg; el.style.display = msg ? 'block' : 'none';
-  document.getElementById('loginError').style.display = 'none';
-}
-
-function setLoginMode(mode){
-  loginMode = mode;
-  const title   = document.getElementById('loginTitle');
-  const sub     = document.getElementById('loginSub');
-  const btn     = document.getElementById('loginBtn');
-  const p2      = document.getElementById('loginPass2Field');
-  const pf      = document.getElementById('loginPassField');
-  const nameF   = document.getElementById('loginNameField');
-  const msgF    = document.getElementById('loginMsgField');
-  const togText = document.getElementById('loginToggleText');
-  const togLink = document.getElementById('loginToggleLink');
-  const forgot  = document.getElementById('loginForgotLink');
-  if(!title || !btn) return; // elementos no listos aún
-  setLoginError(''); setLoginSuccess('');
-
-  if(mode === 'login'){
-    title.textContent = 'Iniciar sesión';
-    sub.textContent   = 'Acceso restringido — solo usuarios autorizados.';
-    btn.textContent   = 'Entrar';
-    pf.classList.remove('hidden');
-    p2.classList.add('hidden'); nameF.classList.add('hidden'); msgF.classList.add('hidden');
-    togText.textContent = '¿Necesitás acceso?'; togLink.textContent = ' Solicitarlo';
-    forgot.style.display = 'inline';
-  } else if(mode === 'request'){
-    title.textContent = 'Solicitar acceso';
-    sub.textContent   = 'El administrador revisará tu solicitud y te habilitará el acceso.';
-    btn.textContent   = 'Enviar solicitud';
-    pf.classList.add('hidden'); p2.classList.add('hidden');
-    nameF.classList.remove('hidden'); msgF.classList.remove('hidden');
-    togText.textContent = '¿Ya tenés acceso?'; togLink.textContent = ' Iniciar sesión';
-    forgot.style.display = 'none';
-  } else if(mode === 'forgot'){
-    title.textContent = 'Recuperar contraseña';
-    sub.textContent   = 'Te enviamos un link para restablecer tu contraseña.';
-    btn.textContent   = 'Enviar link';
-    pf.classList.add('hidden'); p2.classList.add('hidden');
-    nameF.classList.add('hidden'); msgF.classList.add('hidden');
-    togText.textContent = ''; togLink.textContent = '← Volver';
-    forgot.style.display = 'none';
-  }
-}
-
-document.getElementById('loginToggleLink').addEventListener('click', ()=>{
-  setLoginMode(loginMode === 'login' ? 'request' : 'login');
-});
-document.getElementById('loginForgotLink').addEventListener('click', ()=>{
-  setLoginMode('forgot');
-});
-
-document.getElementById('loginBtn').addEventListener('click', async ()=>{
-  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
-  const pass  = document.getElementById('loginPass').value;
-  const name  = document.getElementById('loginName')?.value.trim() || '';
-  const msg   = document.getElementById('loginMsg')?.value.trim() || '';
-  const btn   = document.getElementById('loginBtn');
-
-  if(!email){ setLoginError('Ingresá tu email.'); return; }
-  if(loginMode === 'login' && !pass){ setLoginError('Ingresá tu contraseña.'); return; }
-
-  btn.disabled = true; btn.textContent = 'Cargando…';
-  setLoginError('');
-
-  try {
-    if(loginMode === 'login'){
-      const { data, error: authErr } = await supa.auth.signInWithPassword({ email, password: pass });
-      if(authErr) throw authErr;
-      // onAuthStateChange toma el control — si no dispara, forzamos
-      if(data?.session){
-        const rol = await checkAuthorization(email);
-        if(!rol){
-          await supa.auth.signOut();
-          throw new Error('Tu cuenta no está autorizada. Solicitá acceso al administrador.');
-        }
-        currentUser    = data.session.user;
-        currentUserRol = rol;
-        updateUserPill(currentUser, rol);
-        hideLoginScreen();
-        if(!mergedData.length){
-          switchMode('import'); showImportStep(1);
-          const hasData = await loadProfilesFromStorage();
-          if(hasData){
-            exportColumns = [...mergedColumns];
-            exportColumnEnabled = {};
-            mergedColumns.forEach(c => exportColumnEnabled[c] = true);
-            renderResults();
-            switchMode('profiles');
-          }
-        }
-      }
-
-    } else if(loginMode === 'request'){
-      const { error } = await supa.from('solicitudes_acceso').insert({ email, nombre: name, mensaje: msg });
-      if(error && error.code !== '23505') throw error;
-      setLoginSuccess('Solicitud enviada. El administrador revisará tu pedido.');
-      setLoginMode('login');
-
-    } else if(loginMode === 'forgot'){
-      const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: window.location.href });
-      if(error) throw error;
-      setLoginSuccess('Link enviado. Revisá tu email (y spam).');
-    }
-  } catch(err){
-    console.error('Login error:', err);
-    setLoginError(err.message || 'Error al conectar. Verificá tu conexión e intentá de nuevo.');
-  } finally {
-    btn.disabled = false;
-    btn.textContent = loginMode==='login' ? 'Entrar' : loginMode==='request' ? 'Enviar solicitud' : 'Enviar link';
-  }
-});
-
-['loginEmail','loginPass'].forEach(id => {
-  document.getElementById(id)?.addEventListener('keydown', e => {
-    if(e.key === 'Enter') document.getElementById('loginBtn').click();
-  });
-});
-
-document.getElementById('btnLogout').addEventListener('click', async ()=>{
-  await supa.auth.signOut();
-  currentUserRol = null;
-});
-
-function updateUserPill(user, rol){
-  const pill    = document.getElementById('userPill');
-  const avatar  = document.getElementById('userAvatar');
-  const emailEl = document.getElementById('userEmail');
-  const adminBtn= document.getElementById('btnAdminPanel');
-  if(user){
-    avatar.textContent  = (user.email||'?').substring(0,2).toUpperCase();
-    emailEl.textContent = user.email;
-    pill.style.display  = 'flex';
-    if(adminBtn) adminBtn.style.display = (rol === 'admin') ? 'inline-flex' : 'none';
-  } else {
-    pill.style.display = 'none';
-    if(adminBtn) adminBtn.style.display = 'none';
-  }
-}
-
-async function checkAuthorization(email){
-  const { data, error } = await supa
-    .from('usuarios_autorizados')
-    .select('rol, estado')
-    .eq('email', email.toLowerCase())
-    .single();
-  if(error || !data || data.estado !== 'activo') return null;
-  return data.rol;
-}
-
-supa.auth.onAuthStateChange(async (event, session) => {
-  if(session?.user){
-    const email = session.user.email;
-    const rol = await checkAuthorization(email);
-    if(!rol){
-      await supa.auth.signOut();
-      setLoginError('Tu cuenta no está autorizada. Solicitá acceso al administrador.');
-      showLoginScreen();
-      return;
-    }
-    currentUser    = session.user;
-    currentUserRol = rol;
-    updateUserPill(currentUser, rol);
-    hideLoginScreen();
-    if(!mergedData.length){
-      switchMode('import'); showImportStep(1);
-      const hasData = await loadProfilesFromStorage();
-      if(hasData){
-        exportColumns = [...mergedColumns];
-        exportColumnEnabled = {};
-        mergedColumns.forEach(c => exportColumnEnabled[c] = true);
-        renderResults();
-        switchMode('profiles');
-      }
-    }
-  } else {
-    currentUser = null; currentUserRol = null;
-    updateUserPill(null, null);
-    showLoginScreen();
-  }
-});
-
-/* ============================================================
-   PANEL ADMIN
-============================================================ */
-function openAdminPanel(){
-  if(currentUserRol !== 'admin'){ alert('Acceso denegado.'); return; }
-  const existing = document.getElementById('adminPanelOverlay');
-  if(existing) existing.remove();
-  const overlay = document.createElement('div');
-  overlay.id = 'adminPanelOverlay';
-  overlay.style.cssText = `position:fixed;inset:0;z-index:3000;background:rgba(43,40,32,0.55);
-    display:flex;align-items:center;justify-content:center;padding:20px;`;
-  overlay.innerHTML = `
-    <div style="background:var(--panel);border:1px solid var(--border);border-top:4px solid var(--accent);
-      border-radius:4px 4px 8px 8px;width:100%;max-width:720px;max-height:90vh;display:flex;flex-direction:column;">
-      <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
-        <div>
-          <div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Panel administrador</div>
-          <div style="font-size:18px;font-weight:700;font-family:var(--display);margin-top:2px;">Control de acceso</div>
-        </div>
-        <button onclick="document.getElementById('adminPanelOverlay').remove()"
-          style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text-dim);">&#x2715;</button>
-      </div>
-      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px;">
-        <button class="admin-tab active" data-tab="solicitudes"
-          style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-          padding:10px 16px;background:none;border:none;border-bottom:2px solid var(--accent);cursor:pointer;color:var(--text);">
-          &#128235; Solicitudes</button>
-        <button class="admin-tab" data-tab="usuarios"
-          style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-          padding:10px 16px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--text-dim);">
-          &#128101; Usuarios</button>
-        <button class="admin-tab" data-tab="nuevo"
-          style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
-          padding:10px 16px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--text-dim);">
-          &#10133; Crear usuario</button>
-      </div>
-      <div id="adminPanelBody" style="flex:1;overflow-y:auto;padding:24px;"></div>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.querySelectorAll('.admin-tab').forEach(tab => {
-    tab.addEventListener('click', ()=>{
-      overlay.querySelectorAll('.admin-tab').forEach(t=>{
-        t.style.borderBottomColor='transparent'; t.style.color='var(--text-dim)'; t.classList.remove('active');
-      });
-      tab.style.borderBottomColor='var(--accent)'; tab.style.color='var(--text)'; tab.classList.add('active');
-      renderAdminTab(tab.dataset.tab);
-    });
-  });
-  renderAdminTab('solicitudes');
-}
-
-async function renderAdminTab(tab){
-  const body = document.getElementById('adminPanelBody');
-  body.innerHTML = '<div style="color:var(--text-dim);font-family:var(--mono);font-size:12px;">Cargando&#8230;</div>';
-
-  if(tab === 'solicitudes'){
-    const { data } = await supa.from('solicitudes_acceso').select('*').order('created_at',{ascending:false});
-    const pendientes = (data||[]).filter(s=>s.estado==='pendiente');
-    const resto = (data||[]).filter(s=>s.estado!=='pendiente');
-    body.innerHTML = `
-      <div style="margin-bottom:16px;">
-        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">
-          Pendientes <span style="background:var(--conflict);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:6px;">${pendientes.length}</span>
-        </div>
-        ${pendientes.length===0
-          ? '<div style="color:var(--text-dim);font-size:13px;">Sin solicitudes pendientes.</div>'
-          : pendientes.map(s=>adminSolicitudCard(s)).join('')}
-      </div>
-      ${resto.length ? `<details style="margin-top:16px;"><summary style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text-dim);font-weight:600;text-transform:uppercase;">
-        Historial (${resto.length})</summary><div style="margin-top:12px;">${resto.map(s=>adminSolicitudCard(s,true)).join('')}</div></details>` : ''}`;
-    body.querySelectorAll('[data-action]').forEach(btn => {
-      btn.addEventListener('click', ()=>handleSolicitudAction(btn.dataset.action, btn.dataset.id, btn.dataset.email, btn.dataset.nombre||''));
-    });
-
-  } else if(tab === 'usuarios'){
-    const { data } = await supa.from('usuarios_autorizados').select('*').order('created_at',{ascending:false});
-    const items = data||[];
-    body.innerHTML = `
-      <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px;">${items.length} usuario${items.length!==1?'s':''} registrados</div>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;">
-        <thead><tr style="border-bottom:2px solid var(--border);">
-          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">EMAIL</th>
-          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">NOMBRE</th>
-          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ROL</th>
-          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ESTADO</th>
-          <th style="padding:6px 8px;"></th>
-        </tr></thead>
-        <tbody>${items.map(u=>`
-          <tr style="border-bottom:1px solid var(--border);">
-            <td style="padding:8px;font-family:var(--mono);font-size:12px;">${escHtml(u.email)}</td>
-            <td style="padding:8px;">${escHtml(u.nombre||'—')}</td>
-            <td style="padding:8px;"><span style="font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;
-              background:${u.rol==='admin'?'var(--accent)':'var(--panel-2)'};color:${u.rol==='admin'?'var(--panel)':'var(--text-dim)'};">${u.rol}</span></td>
-            <td style="padding:8px;"><span style="font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;
-              background:${u.estado==='activo'?'rgba(47,107,82,.15)':u.estado==='bloqueado'?'rgba(179,64,47,.15)':'rgba(173,122,53,.15)'};
-              color:${u.estado==='activo'?'var(--match)':u.estado==='bloqueado'?'var(--conflict)':'var(--accent-2)'};
-              border:1px solid ${u.estado==='activo'?'var(--match)':u.estado==='bloqueado'?'var(--conflict)':'var(--accent-2)'};">${u.estado}</span></td>
-            <td style="padding:8px;text-align:right;">${u.email!==ADMIN_EMAIL?`
-              <button data-uid="${u.id}" data-action="${u.estado==='activo'?'bloquear':'activar'}" data-email="${escHtml(u.email)}"
-                class="admin-user-btn secondary" style="font-size:11px;padding:3px 10px;margin-right:4px;">${u.estado==='activo'?'Bloquear':'Activar'}</button>
-              <button data-uid="${u.id}" data-action="eliminar" data-email="${escHtml(u.email)}"
-                class="admin-user-btn" style="font-size:11px;padding:3px 10px;background:var(--conflict);color:#fff;border:none;border-radius:3px;cursor:pointer;">Eliminar</button>
-              `:'<span style="font-size:11px;color:var(--text-dim);">Admin principal</span>'}</td>
-          </tr>`).join('')}</tbody>
-      </table>`;
-    body.querySelectorAll('.admin-user-btn').forEach(btn=>{
-      btn.addEventListener('click',()=>handleUserAction(btn.dataset.action,btn.dataset.uid,btn.dataset.email));
-    });
-
-  } else if(tab === 'nuevo'){
-    body.innerHTML = `
-      <div style="max-width:400px;">
-        <div style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">
-          Creá un usuario directamente. Recibirá un email para confirmar su cuenta.
-        </div>
-        <div style="margin-bottom:14px;">
-          <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Email</label>
-          <input id="newUserEmail" type="email" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);" placeholder="usuario@ejemplo.com">
-        </div>
-        <div style="margin-bottom:14px;">
-          <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Nombre</label>
-          <input id="newUserName" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);" placeholder="Nombre completo">
-        </div>
-        <div style="margin-bottom:14px;">
-          <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Rol</label>
-          <select id="newUserRol" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);">
-            <option value="usuario">Usuario</option>
-            <option value="admin">Administrador</option>
-          </select>
-        </div>
-        <div style="margin-bottom:20px;">
-          <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Contrase&#241;a temporal</label>
-          <input id="newUserPass" type="password" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);" placeholder="M&#237;nimo 6 caracteres">
-          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">El usuario puede cambiarla con "Olvidé mi contraseña".</div>
-        </div>
-        <button id="btnCrearUsuario" style="padding:10px 24px;background:var(--accent);color:var(--panel);border:none;border-radius:4px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;">
-          Crear usuario
-        </button>
-        <div id="newUserMsg" style="margin-top:12px;font-size:13px;"></div>
-      </div>`;
-    document.getElementById('btnCrearUsuario').addEventListener('click', crearUsuario);
-  }
-}
-
-function adminSolicitudCard(s, done=false){
-  const fecha = new Date(s.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
-  const estadoColor = s.estado==='aprobada'?'var(--match)':s.estado==='rechazada'?'var(--conflict)':'var(--accent-2)';
-  return `<div style="background:var(--panel-2);border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:10px;">
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-      <div>
-        <div style="font-weight:600;font-size:14px;">${escHtml(s.nombre||'Sin nombre')}</div>
-        <div style="font-family:var(--mono);font-size:12px;color:var(--accent);margin-top:2px;">${escHtml(s.email)}</div>
-        ${s.mensaje?`<div style="font-size:12px;color:var(--text-dim);margin-top:6px;">"${escHtml(s.mensaje)}"</div>`:''}
-        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:6px;">${fecha}</div>
-      </div>
-      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
-        <span style="font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;color:${estadoColor};border:1px solid ${estadoColor};">${s.estado.toUpperCase()}</span>
-        ${!done?`<div style="display:flex;gap:6px;margin-top:4px;">
-          <button class="primary" data-action="aprobar" data-id="${s.id}" data-email="${escHtml(s.email)}" data-nombre="${escHtml(s.nombre||'')}"
-            style="font-size:11px;padding:4px 12px;">&#10003; Aprobar</button>
-          <button class="secondary" data-action="rechazar" data-id="${s.id}" data-email="${escHtml(s.email)}"
-            style="font-size:11px;padding:4px 12px;">&#10007; Rechazar</button>
-        </div>`:''}
-      </div>
-    </div>
-  </div>`;
-}
-
-async function handleSolicitudAction(action, id, email, nombre){
-  if(action === 'aprobar'){
-    const { error: uErr } = await supa.from('usuarios_autorizados').upsert({
-      email: email.toLowerCase(), nombre: nombre||email,
-      rol:'usuario', estado:'activo', creado_por: currentUser.email
-    }, {onConflict:'email'});
-    if(uErr){ alert('Error: '+uErr.message); return; }
-    await supa.from('solicitudes_acceso').update({estado:'aprobada',revisado_por:currentUser.email}).eq('id',id);
-    alert('✓ '+email+' fue autorizado.
-
-Pedile que use "Olvidé mi contraseña" en el login para crear su contraseña, o creale la cuenta desde "Crear usuario".');
-    renderAdminTab('solicitudes');
-  } else if(action === 'rechazar'){
-    if(!confirm('¿Rechazar la solicitud de '+email+'?')) return;
-    await supa.from('solicitudes_acceso').update({estado:'rechazada',revisado_por:currentUser.email}).eq('id',id);
-    renderAdminTab('solicitudes');
-  }
-}
-
-async function handleUserAction(action, uid, email){
-  if(action==='bloquear'){ if(!confirm('¿Bloquear a '+email+'?')) return; await supa.from('usuarios_autorizados').update({estado:'bloqueado'}).eq('id',uid); }
-  else if(action==='activar'){ await supa.from('usuarios_autorizados').update({estado:'activo'}).eq('id',uid); }
-  else if(action==='eliminar'){ if(!confirm('¿Eliminar a '+email+'? No se puede deshacer.')) return; await supa.from('usuarios_autorizados').delete().eq('id',uid); }
-  renderAdminTab('usuarios');
-}
-
-async function crearUsuario(){
-  const email = document.getElementById('newUserEmail').value.trim().toLowerCase();
-  const nombre= document.getElementById('newUserName').value.trim();
-  const rol   = document.getElementById('newUserRol').value;
-  const pass  = document.getElementById('newUserPass').value;
-  const msg   = document.getElementById('newUserMsg');
-  if(!email){ msg.style.color='var(--conflict)'; msg.textContent='Ingresá un email.'; return; }
-  if(!pass||pass.length<6){ msg.style.color='var(--conflict)'; msg.textContent='Contraseña mínima: 6 caracteres.'; return; }
-  msg.style.color='var(--text-dim)'; msg.textContent='Creando…';
-  const { error: signErr } = await supa.auth.signUp({ email, password: pass });
-  if(signErr && !signErr.message.includes('already registered')){ msg.style.color='var(--conflict)'; msg.textContent='Error Auth: '+signErr.message; return; }
-  const { error: dbErr } = await supa.from('usuarios_autorizados').upsert({
-    email, nombre:nombre||email, rol, estado:'activo', creado_por:currentUser.email
-  },{onConflict:'email'});
-  if(dbErr){ msg.style.color='var(--conflict)'; msg.textContent='Error BD: '+dbErr.message; return; }
-  msg.style.color='var(--match)';
-  msg.textContent='✓ Usuario '+email+' creado. '+(signErr?'Ya tenía cuenta — actualizado en la lista.':'Debe confirmar su email para ingresar.');
-  document.getElementById('newUserEmail').value='';
-  document.getElementById('newUserName').value='';
-  document.getElementById('newUserPass').value='';
-}
-
-// Indicador visual de sincronización
-function setSyncStatus(state, msg=''){
-  let el = document.getElementById('syncStatus');
-  if(!el){
-    el = document.createElement('div');
-    el.id = 'syncStatus';
-    el.style.cssText = `position:fixed;bottom:12px;right:12px;z-index:9999;font-family:var(--mono);
-      font-size:11px;font-weight:600;padding:6px 12px;border-radius:4px;
-      display:flex;align-items:center;gap:6px;transition:opacity .3s;`;
-    document.body.appendChild(el);
-  }
-  const styles = {
-    saving:  { bg:'#ad7a35', color:'#fbf6ea', icon:'💾', text: msg||'Guardando…' },
-    ok:      { bg:'#2f6b52', color:'#fbf6ea', icon:'✓',  text: msg||'Guardado' },
-    loading: { bg:'#2f6b52', color:'#fbf6ea', icon:'⟳',  text: msg||'Cargando…' },
-    error:   { bg:'#b3402f', color:'#fbf6ea', icon:'✗',  text: msg||'Error al guardar' },
-  };
-  const s = styles[state] || styles.ok;
-  el.style.background = s.bg;
-  el.style.color = s.color;
-  el.innerHTML = `${s.icon} ${s.text}`;
-  el.style.opacity = '1';
-  if(state === 'ok') setTimeout(()=>{ el.style.opacity='0'; }, 2000);
-}
 
 /* ============================================================
    ESTADO GLOBAL
