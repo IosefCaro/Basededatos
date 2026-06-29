@@ -891,19 +891,23 @@
       <label>Contraseña</label>
       <input type="password" id="loginPass" placeholder="••••••••" autocomplete="current-password">
     </div>
-    <div class="login-field hidden" id="loginPass2Field">
-      <label>Repetir contraseña</label>
-      <input type="password" id="loginPass2" placeholder="••••••••" autocomplete="new-password">
+    <div class="login-field hidden" id="loginNameField">
+      <label>Tu nombre</label>
+      <input type="text" id="loginName" placeholder="Nombre y apellido">
+    </div>
+    <div class="login-field hidden" id="loginMsgField">
+      <label>Motivo del acceso (opcional)</label>
+      <input type="text" id="loginMsg" placeholder="Ej: soy docente del colegio…">
     </div>
     <button class="login-btn" id="loginBtn">Entrar</button>
     <div class="login-error" id="loginError"></div>
     <div class="login-success" id="loginSuccess"></div>
     <div class="login-toggle">
-      <span id="loginToggleText">¿No tenés cuenta?</span>
-      <a id="loginToggleLink"> Registrarse</a>
+      <span id="loginToggleText">¿Necesitás acceso?</span>
+      <a id="loginToggleLink"> Solicitarlo</a>
     </div>
     <div class="login-toggle" style="margin-top:8px;">
-      <a id="loginForgotLink">Olvidé mi contraseña</a>
+      <a id="loginForgotLink" style="display:inline;">Olvidé mi contraseña</a>
     </div>
   </div>
 </div>
@@ -928,6 +932,11 @@
         <button class="nav-btn active" id="navProfiles" data-panel="profiles">👤 Perfiles</button>
         <button class="nav-btn" id="navImport" data-panel="import">📥 Importar base</button>
       </nav>
+      <button id="btnAdminPanel" onclick="openAdminPanel()" style="display:none;align-items:center;gap:6px;
+        padding:6px 12px;background:var(--accent-2);color:var(--panel);border:none;border-radius:4px;
+        font-family:var(--mono);font-size:11px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;">
+        ⚙ Admin
+      </button>
       <div class="user-pill" id="userPill" style="display:none;">
         <div class="user-pill-avatar" id="userAvatar">?</div>
         <span class="user-pill-email" id="userEmail"></span>
@@ -1264,10 +1273,12 @@ const SUPA_KEY = 'sb_publishable_zZQYcH1yAS7NWFRw8ktmrQ_A1FtiFUb';
 const supa = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 /* ============================================================
-   AUTH — login / registro / logout
+   AUTH — login / solicitud / admin
 ============================================================ */
-let currentUser = null;
-let loginMode = 'login'; // 'login' | 'register' | 'forgot'
+const ADMIN_EMAIL = 'info@iosefcaro.org';
+let currentUser     = null;
+let currentUserRol  = null;
+let loginMode       = 'login'; // 'login' | 'request' | 'forgot'
 
 function showLoginScreen(){ document.getElementById('loginScreen').style.display = 'flex'; }
 function hideLoginScreen(){ document.getElementById('loginScreen').style.display = 'none'; }
@@ -1290,6 +1301,8 @@ function setLoginMode(mode){
   const btn     = document.getElementById('loginBtn');
   const p2      = document.getElementById('loginPass2Field');
   const pf      = document.getElementById('loginPassField');
+  const nameF   = document.getElementById('loginNameField');
+  const msgF    = document.getElementById('loginMsgField');
   const togText = document.getElementById('loginToggleText');
   const togLink = document.getElementById('loginToggleLink');
   const forgot  = document.getElementById('loginForgotLink');
@@ -1297,39 +1310,43 @@ function setLoginMode(mode){
 
   if(mode === 'login'){
     title.textContent = 'Iniciar sesión';
-    sub.textContent   = 'Ingresá con tu cuenta para acceder a la base.';
+    sub.textContent   = 'Acceso restringido — solo usuarios autorizados.';
     btn.textContent   = 'Entrar';
-    pf.classList.remove('hidden'); p2.classList.add('hidden');
-    togText.textContent = '¿No tenés cuenta?'; togLink.textContent = ' Registrarse';
-    forgot.style.display = 'block';
-  } else if(mode === 'register'){
-    title.textContent = 'Crear cuenta';
-    sub.textContent   = 'Completá los datos para registrarte.';
-    btn.textContent   = 'Registrarse';
-    pf.classList.remove('hidden'); p2.classList.remove('hidden');
-    togText.textContent = '¿Ya tenés cuenta?'; togLink.textContent = ' Iniciar sesión';
+    pf.classList.remove('hidden');
+    p2.classList.add('hidden'); nameF.classList.add('hidden'); msgF.classList.add('hidden');
+    togText.textContent = '¿Necesitás acceso?'; togLink.textContent = ' Solicitarlo';
+    forgot.style.display = 'inline';
+  } else if(mode === 'request'){
+    title.textContent = 'Solicitar acceso';
+    sub.textContent   = 'El administrador revisará tu solicitud y te habilitará el acceso.';
+    btn.textContent   = 'Enviar solicitud';
+    pf.classList.add('hidden'); p2.classList.add('hidden');
+    nameF.classList.remove('hidden'); msgF.classList.remove('hidden');
+    togText.textContent = '¿Ya tenés acceso?'; togLink.textContent = ' Iniciar sesión';
     forgot.style.display = 'none';
   } else if(mode === 'forgot'){
     title.textContent = 'Recuperar contraseña';
     sub.textContent   = 'Te enviamos un link para restablecer tu contraseña.';
     btn.textContent   = 'Enviar link';
     pf.classList.add('hidden'); p2.classList.add('hidden');
-    togText.textContent = ''; togLink.textContent = '← Volver al login';
+    nameF.classList.add('hidden'); msgF.classList.add('hidden');
+    togText.textContent = ''; togLink.textContent = '← Volver';
     forgot.style.display = 'none';
   }
 }
 
 document.getElementById('loginToggleLink').addEventListener('click', ()=>{
-  setLoginMode(loginMode === 'login' ? 'register' : 'login');
+  setLoginMode(loginMode === 'login' ? 'request' : 'login');
 });
 document.getElementById('loginForgotLink').addEventListener('click', ()=>{
   setLoginMode('forgot');
 });
 
 document.getElementById('loginBtn').addEventListener('click', async ()=>{
-  const email = document.getElementById('loginEmail').value.trim();
+  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
   const pass  = document.getElementById('loginPass').value;
-  const pass2 = document.getElementById('loginPass2').value;
+  const name  = document.getElementById('loginName')?.value.trim() || '';
+  const msg   = document.getElementById('loginMsg')?.value.trim() || '';
   const btn   = document.getElementById('loginBtn');
 
   if(!email){ setLoginError('Ingresá tu email.'); return; }
@@ -1338,37 +1355,30 @@ document.getElementById('loginBtn').addEventListener('click', async ()=>{
 
   try {
     if(loginMode === 'login'){
-      if(!pass){ setLoginError('Ingresá tu contraseña.'); return; }
-      const { error } = await supa.auth.signInWithPassword({ email, password: pass });
-      if(error) throw error;
-      // onAuthStateChange se encarga del resto
+      if(!pass){ setLoginError('Ingresá tu contraseña.'); btn.disabled=false; btn.textContent='Entrar'; return; }
+      const { error: authErr } = await supa.auth.signInWithPassword({ email, password: pass });
+      if(authErr) throw authErr;
 
-    } else if(loginMode === 'register'){
-      if(!pass){ setLoginError('Ingresá una contraseña.'); return; }
-      if(pass !== pass2){ setLoginError('Las contraseñas no coinciden.'); return; }
-      if(pass.length < 6){ setLoginError('La contraseña debe tener al menos 6 caracteres.'); return; }
-      const { error } = await supa.auth.signUp({ email, password: pass });
-      if(error) throw error;
-      setLoginSuccess('¡Cuenta creada! Revisá tu email para confirmarla y luego iniciá sesión.');
+    } else if(loginMode === 'request'){
+      const { error } = await supa.from('solicitudes_acceso').insert({ email, nombre: name, mensaje: msg });
+      if(error && error.code !== '23505') throw error;
+      setLoginSuccess('Solicitud enviada. El administrador revisará tu pedido.');
       setLoginMode('login');
 
     } else if(loginMode === 'forgot'){
-      const { error } = await supa.auth.resetPasswordForEmail(email, {
-        redirectTo: window.location.href,
-      });
+      const { error } = await supa.auth.resetPasswordForEmail(email, { redirectTo: window.location.href });
       if(error) throw error;
-      setLoginSuccess('Link enviado. Revisá tu email.');
+      setLoginSuccess('Link enviado. Revisá tu email (y spam).');
     }
   } catch(err){
     setLoginError(err.message || 'Error. Intentá de nuevo.');
   } finally {
     btn.disabled = false;
-    btn.textContent = loginMode === 'login' ? 'Entrar' : loginMode === 'register' ? 'Registrarse' : 'Enviar link';
+    btn.textContent = loginMode==='login' ? 'Entrar' : loginMode==='request' ? 'Enviar solicitud' : 'Enviar link';
   }
 });
 
-// Enter en los inputs dispara el botón
-['loginEmail','loginPass','loginPass2'].forEach(id => {
+['loginEmail','loginPass'].forEach(id => {
   document.getElementById(id)?.addEventListener('keydown', e => {
     if(e.key === 'Enter') document.getElementById('loginBtn').click();
   });
@@ -1376,29 +1386,49 @@ document.getElementById('loginBtn').addEventListener('click', async ()=>{
 
 document.getElementById('btnLogout').addEventListener('click', async ()=>{
   await supa.auth.signOut();
+  currentUserRol = null;
 });
 
-function updateUserPill(user){
-  const pill   = document.getElementById('userPill');
-  const avatar = document.getElementById('userAvatar');
-  const emailEl= document.getElementById('userEmail');
+function updateUserPill(user, rol){
+  const pill    = document.getElementById('userPill');
+  const avatar  = document.getElementById('userAvatar');
+  const emailEl = document.getElementById('userEmail');
+  const adminBtn= document.getElementById('btnAdminPanel');
   if(user){
-    const initials = (user.email||'?').substring(0,2).toUpperCase();
-    avatar.textContent = initials;
+    avatar.textContent  = (user.email||'?').substring(0,2).toUpperCase();
     emailEl.textContent = user.email;
-    pill.style.display = 'flex';
+    pill.style.display  = 'flex';
+    if(adminBtn) adminBtn.style.display = (rol === 'admin') ? 'inline-flex' : 'none';
   } else {
     pill.style.display = 'none';
+    if(adminBtn) adminBtn.style.display = 'none';
   }
 }
 
-// Escuchar cambios de sesión
+async function checkAuthorization(email){
+  const { data, error } = await supa
+    .from('usuarios_autorizados')
+    .select('rol, estado')
+    .eq('email', email.toLowerCase())
+    .single();
+  if(error || !data || data.estado !== 'activo') return null;
+  return data.rol;
+}
+
 supa.auth.onAuthStateChange(async (event, session) => {
   if(session?.user){
-    currentUser = session.user;
-    updateUserPill(currentUser);
+    const email = session.user.email;
+    const rol = await checkAuthorization(email);
+    if(!rol){
+      await supa.auth.signOut();
+      setLoginError('Tu cuenta no está autorizada. Solicitá acceso al administrador.');
+      showLoginScreen();
+      return;
+    }
+    currentUser    = session.user;
+    currentUserRol = rol;
+    updateUserPill(currentUser, rol);
     hideLoginScreen();
-    // Cargar datos si aún no hay nada
     if(!mergedData.length){
       switchMode('import'); showImportStep(1);
       const hasData = await loadProfilesFromStorage();
@@ -1411,11 +1441,227 @@ supa.auth.onAuthStateChange(async (event, session) => {
       }
     }
   } else {
-    currentUser = null;
-    updateUserPill(null);
+    currentUser = null; currentUserRol = null;
+    updateUserPill(null, null);
     showLoginScreen();
   }
 });
+
+/* ============================================================
+   PANEL ADMIN
+============================================================ */
+function openAdminPanel(){
+  if(currentUserRol !== 'admin'){ alert('Acceso denegado.'); return; }
+  const existing = document.getElementById('adminPanelOverlay');
+  if(existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'adminPanelOverlay';
+  overlay.style.cssText = `position:fixed;inset:0;z-index:3000;background:rgba(43,40,32,0.55);
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.innerHTML = `
+    <div style="background:var(--panel);border:1px solid var(--border);border-top:4px solid var(--accent);
+      border-radius:4px 4px 8px 8px;width:100%;max-width:720px;max-height:90vh;display:flex;flex-direction:column;">
+      <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-family:var(--mono);font-size:11px;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Panel administrador</div>
+          <div style="font-size:18px;font-weight:700;font-family:var(--display);margin-top:2px;">Control de acceso</div>
+        </div>
+        <button onclick="document.getElementById('adminPanelOverlay').remove()"
+          style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text-dim);">&#x2715;</button>
+      </div>
+      <div style="display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px;">
+        <button class="admin-tab active" data-tab="solicitudes"
+          style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+          padding:10px 16px;background:none;border:none;border-bottom:2px solid var(--accent);cursor:pointer;color:var(--text);">
+          &#128235; Solicitudes</button>
+        <button class="admin-tab" data-tab="usuarios"
+          style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+          padding:10px 16px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--text-dim);">
+          &#128101; Usuarios</button>
+        <button class="admin-tab" data-tab="nuevo"
+          style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;
+          padding:10px 16px;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--text-dim);">
+          &#10133; Crear usuario</button>
+      </div>
+      <div id="adminPanelBody" style="flex:1;overflow-y:auto;padding:24px;"></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelectorAll('.admin-tab').forEach(tab => {
+    tab.addEventListener('click', ()=>{
+      overlay.querySelectorAll('.admin-tab').forEach(t=>{
+        t.style.borderBottomColor='transparent'; t.style.color='var(--text-dim)'; t.classList.remove('active');
+      });
+      tab.style.borderBottomColor='var(--accent)'; tab.style.color='var(--text)'; tab.classList.add('active');
+      renderAdminTab(tab.dataset.tab);
+    });
+  });
+  renderAdminTab('solicitudes');
+}
+
+async function renderAdminTab(tab){
+  const body = document.getElementById('adminPanelBody');
+  body.innerHTML = '<div style="color:var(--text-dim);font-family:var(--mono);font-size:12px;">Cargando&#8230;</div>';
+
+  if(tab === 'solicitudes'){
+    const { data } = await supa.from('solicitudes_acceso').select('*').order('created_at',{ascending:false});
+    const pendientes = (data||[]).filter(s=>s.estado==='pendiente');
+    const resto = (data||[]).filter(s=>s.estado!=='pendiente');
+    body.innerHTML = `
+      <div style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:12px;">
+          Pendientes <span style="background:var(--conflict);color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;margin-left:6px;">${pendientes.length}</span>
+        </div>
+        ${pendientes.length===0
+          ? '<div style="color:var(--text-dim);font-size:13px;">Sin solicitudes pendientes.</div>'
+          : pendientes.map(s=>adminSolicitudCard(s)).join('')}
+      </div>
+      ${resto.length ? `<details style="margin-top:16px;"><summary style="cursor:pointer;font-family:var(--mono);font-size:11px;color:var(--text-dim);font-weight:600;text-transform:uppercase;">
+        Historial (${resto.length})</summary><div style="margin-top:12px;">${resto.map(s=>adminSolicitudCard(s,true)).join('')}</div></details>` : ''}`;
+    body.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', ()=>handleSolicitudAction(btn.dataset.action, btn.dataset.id, btn.dataset.email, btn.dataset.nombre||''));
+    });
+
+  } else if(tab === 'usuarios'){
+    const { data } = await supa.from('usuarios_autorizados').select('*').order('created_at',{ascending:false});
+    const items = data||[];
+    body.innerHTML = `
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:16px;">${items.length} usuario${items.length!==1?'s':''} registrados</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr style="border-bottom:2px solid var(--border);">
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">EMAIL</th>
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">NOMBRE</th>
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ROL</th>
+          <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ESTADO</th>
+          <th style="padding:6px 8px;"></th>
+        </tr></thead>
+        <tbody>${items.map(u=>`
+          <tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px;font-family:var(--mono);font-size:12px;">${escHtml(u.email)}</td>
+            <td style="padding:8px;">${escHtml(u.nombre||'—')}</td>
+            <td style="padding:8px;"><span style="font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;
+              background:${u.rol==='admin'?'var(--accent)':'var(--panel-2)'};color:${u.rol==='admin'?'var(--panel)':'var(--text-dim)'};">${u.rol}</span></td>
+            <td style="padding:8px;"><span style="font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;
+              background:${u.estado==='activo'?'rgba(47,107,82,.15)':u.estado==='bloqueado'?'rgba(179,64,47,.15)':'rgba(173,122,53,.15)'};
+              color:${u.estado==='activo'?'var(--match)':u.estado==='bloqueado'?'var(--conflict)':'var(--accent-2)'};
+              border:1px solid ${u.estado==='activo'?'var(--match)':u.estado==='bloqueado'?'var(--conflict)':'var(--accent-2)'};">${u.estado}</span></td>
+            <td style="padding:8px;text-align:right;">${u.email!==ADMIN_EMAIL?`
+              <button data-uid="${u.id}" data-action="${u.estado==='activo'?'bloquear':'activar'}" data-email="${escHtml(u.email)}"
+                class="admin-user-btn secondary" style="font-size:11px;padding:3px 10px;margin-right:4px;">${u.estado==='activo'?'Bloquear':'Activar'}</button>
+              <button data-uid="${u.id}" data-action="eliminar" data-email="${escHtml(u.email)}"
+                class="admin-user-btn" style="font-size:11px;padding:3px 10px;background:var(--conflict);color:#fff;border:none;border-radius:3px;cursor:pointer;">Eliminar</button>
+              `:'<span style="font-size:11px;color:var(--text-dim);">Admin principal</span>'}</td>
+          </tr>`).join('')}</tbody>
+      </table>`;
+    body.querySelectorAll('.admin-user-btn').forEach(btn=>{
+      btn.addEventListener('click',()=>handleUserAction(btn.dataset.action,btn.dataset.uid,btn.dataset.email));
+    });
+
+  } else if(tab === 'nuevo'){
+    body.innerHTML = `
+      <div style="max-width:400px;">
+        <div style="font-size:13px;color:var(--text-dim);margin-bottom:20px;">
+          Creá un usuario directamente. Recibirá un email para confirmar su cuenta.
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Email</label>
+          <input id="newUserEmail" type="email" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);" placeholder="usuario@ejemplo.com">
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Nombre</label>
+          <input id="newUserName" type="text" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);" placeholder="Nombre completo">
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Rol</label>
+          <select id="newUserRol" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);">
+            <option value="usuario">Usuario</option>
+            <option value="admin">Administrador</option>
+          </select>
+        </div>
+        <div style="margin-bottom:20px;">
+          <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Contrase&#241;a temporal</label>
+          <input id="newUserPass" type="password" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:4px;font-size:14px;background:var(--panel-2);" placeholder="M&#237;nimo 6 caracteres">
+          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">El usuario puede cambiarla con "Olvidé mi contraseña".</div>
+        </div>
+        <button id="btnCrearUsuario" style="padding:10px 24px;background:var(--accent);color:var(--panel);border:none;border-radius:4px;font-family:var(--mono);font-size:13px;font-weight:700;cursor:pointer;text-transform:uppercase;letter-spacing:.05em;">
+          Crear usuario
+        </button>
+        <div id="newUserMsg" style="margin-top:12px;font-size:13px;"></div>
+      </div>`;
+    document.getElementById('btnCrearUsuario').addEventListener('click', crearUsuario);
+  }
+}
+
+function adminSolicitudCard(s, done=false){
+  const fecha = new Date(s.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const estadoColor = s.estado==='aprobada'?'var(--match)':s.estado==='rechazada'?'var(--conflict)':'var(--accent-2)';
+  return `<div style="background:var(--panel-2);border:1px solid var(--border);border-radius:4px;padding:14px;margin-bottom:10px;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:600;font-size:14px;">${escHtml(s.nombre||'Sin nombre')}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--accent);margin-top:2px;">${escHtml(s.email)}</div>
+        ${s.mensaje?`<div style="font-size:12px;color:var(--text-dim);margin-top:6px;">"${escHtml(s.mensaje)}"</div>`:''}
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-dim);margin-top:6px;">${fecha}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+        <span style="font-family:var(--mono);font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;color:${estadoColor};border:1px solid ${estadoColor};">${s.estado.toUpperCase()}</span>
+        ${!done?`<div style="display:flex;gap:6px;margin-top:4px;">
+          <button class="primary" data-action="aprobar" data-id="${s.id}" data-email="${escHtml(s.email)}" data-nombre="${escHtml(s.nombre||'')}"
+            style="font-size:11px;padding:4px 12px;">&#10003; Aprobar</button>
+          <button class="secondary" data-action="rechazar" data-id="${s.id}" data-email="${escHtml(s.email)}"
+            style="font-size:11px;padding:4px 12px;">&#10007; Rechazar</button>
+        </div>`:''}
+      </div>
+    </div>
+  </div>`;
+}
+
+async function handleSolicitudAction(action, id, email, nombre){
+  if(action === 'aprobar'){
+    const { error: uErr } = await supa.from('usuarios_autorizados').upsert({
+      email: email.toLowerCase(), nombre: nombre||email,
+      rol:'usuario', estado:'activo', creado_por: currentUser.email
+    }, {onConflict:'email'});
+    if(uErr){ alert('Error: '+uErr.message); return; }
+    await supa.from('solicitudes_acceso').update({estado:'aprobada',revisado_por:currentUser.email}).eq('id',id);
+    alert('✓ '+email+' fue autorizado.
+
+Pedile que use "Olvidé mi contraseña" en el login para crear su contraseña, o creale la cuenta desde "Crear usuario".');
+    renderAdminTab('solicitudes');
+  } else if(action === 'rechazar'){
+    if(!confirm('¿Rechazar la solicitud de '+email+'?')) return;
+    await supa.from('solicitudes_acceso').update({estado:'rechazada',revisado_por:currentUser.email}).eq('id',id);
+    renderAdminTab('solicitudes');
+  }
+}
+
+async function handleUserAction(action, uid, email){
+  if(action==='bloquear'){ if(!confirm('¿Bloquear a '+email+'?')) return; await supa.from('usuarios_autorizados').update({estado:'bloqueado'}).eq('id',uid); }
+  else if(action==='activar'){ await supa.from('usuarios_autorizados').update({estado:'activo'}).eq('id',uid); }
+  else if(action==='eliminar'){ if(!confirm('¿Eliminar a '+email+'? No se puede deshacer.')) return; await supa.from('usuarios_autorizados').delete().eq('id',uid); }
+  renderAdminTab('usuarios');
+}
+
+async function crearUsuario(){
+  const email = document.getElementById('newUserEmail').value.trim().toLowerCase();
+  const nombre= document.getElementById('newUserName').value.trim();
+  const rol   = document.getElementById('newUserRol').value;
+  const pass  = document.getElementById('newUserPass').value;
+  const msg   = document.getElementById('newUserMsg');
+  if(!email){ msg.style.color='var(--conflict)'; msg.textContent='Ingresá un email.'; return; }
+  if(!pass||pass.length<6){ msg.style.color='var(--conflict)'; msg.textContent='Contraseña mínima: 6 caracteres.'; return; }
+  msg.style.color='var(--text-dim)'; msg.textContent='Creando…';
+  const { error: signErr } = await supa.auth.signUp({ email, password: pass });
+  if(signErr && !signErr.message.includes('already registered')){ msg.style.color='var(--conflict)'; msg.textContent='Error Auth: '+signErr.message; return; }
+  const { error: dbErr } = await supa.from('usuarios_autorizados').upsert({
+    email, nombre:nombre||email, rol, estado:'activo', creado_por:currentUser.email
+  },{onConflict:'email'});
+  if(dbErr){ msg.style.color='var(--conflict)'; msg.textContent='Error BD: '+dbErr.message; return; }
+  msg.style.color='var(--match)';
+  msg.textContent='✓ Usuario '+email+' creado. '+(signErr?'Ya tenía cuenta — actualizado en la lista.':'Debe confirmar su email para ingresar.');
+  document.getElementById('newUserEmail').value='';
+  document.getElementById('newUserName').value='';
+  document.getElementById('newUserPass').value='';
+}
 
 // Indicador visual de sincronización
 function setSyncStatus(state, msg=''){
@@ -4466,40 +4712,178 @@ function renderProfilesExportBar(){
   if(!mergedData.length){ bar.innerHTML=''; return; }
   bar.innerHTML = `
     <div class="export-hint">${mergedData.length} personas · Descargar:</div>
-    <button class="secondary" id="btnProfilesExportXlsx">📥 Excel completo</button>
+    <button class="secondary" id="btnProfilesExportXlsx">📥 Excel</button>
     <button class="secondary" id="btnProfilesExportCsv">📄 CSV</button>
   `;
   document.getElementById('btnProfilesExportXlsx').addEventListener('click', ()=>{
-    const cols = mergedColumns.length ? ['__id',...mergedColumns,'__sources'] : Object.keys(mergedData[0]||{});
-    const headers = cols.map(exportLabel);
-    const rows = mergedData.map(row=>{
-      const obj={};
-      cols.forEach((col,i)=>{
-        if(col==='__sources') obj[headers[i]] = (row.__sources||[]).join(' + ');
-        else if(col==='__id') obj[headers[i]] = row.__id;
-        else obj[headers[i]] = isEmpty(getResolvedValue(row,col)) ? '' : getResolvedValue(row,col);
-      });
-      return obj;
-    });
-    const ws = XLSX.utils.json_to_sheet(rows, {header:headers});
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Base unificada');
+    const { wb } = buildSmartExport();
     XLSX.writeFile(wb, 'base_unificada.xlsx');
   });
   document.getElementById('btnProfilesExportCsv').addEventListener('click', ()=>{
-    const cols = mergedColumns.length ? ['__id',...mergedColumns,'__sources'] : Object.keys(mergedData[0]||{});
-    const headers = cols.map(exportLabel);
+    const { rows, headers } = buildSmartExport();
     const lines = [headers.map(csvEscape).join(',')];
-    mergedData.forEach(row=>{
-      lines.push(cols.map(col=>{
-        if(col==='__sources') return csvEscape((row.__sources||[]).join(' + '));
-        if(col==='__id') return csvEscape(row.__id);
-        const v = getResolvedValue(row,col);
-        return csvEscape(isEmpty(v)?'':v);
-      }).join(','));
-    });
+    rows.forEach(r => lines.push(headers.map(h => csvEscape(r[h]??'')).join(',')));
     downloadBlob(lines.join('\n'), 'base_unificada.csv', 'text/csv;charset=utf-8;');
   });
+}
+
+/* ============================================================
+   EXPORTACIÓN INTELIGENTE
+   Genera columnas limpias, deduplicadas y ordenadas.
+   Orden: ID · Roles · Apellido · Nombre · datos personales ·
+          familia · contacto · escolar · membresía · meta
+============================================================ */
+function buildSmartExport(){
+
+  // ── 1. Reglas de mapeo: regex → nombre de columna canónico ──
+  // Cada entrada: { re, label, group, priority }
+  // priority: menor = más a la izquierda en el Excel
+  const COL_MAP = [
+    // Identidad
+    { re:/^apellido$/i,                                         label:'Apellido',            group:'identidad',  priority:10 },
+    { re:/apellido.*(alumno|persona|titular)/i,                 label:'Apellido',            group:'identidad',  priority:10 },
+    { re:/^nombre$/i,                                           label:'Nombre',              group:'identidad',  priority:11 },
+    { re:/nombre.*(alumno|persona|titular)/i,                   label:'Nombre',              group:'identidad',  priority:11 },
+    { re:/nombre.*(hebreo|judio)/i,                             label:'Nombre hebreo',       group:'identidad',  priority:12 },
+    { re:/nombre.*completo|apellido.*nombre|nombre.*apellido/i, label:'Nombre completo',     group:'identidad',  priority:13 },
+    { re:/dni|cedula|id$/i,                                     label:'DNI',                 group:'identidad',  priority:14 },
+    { re:/cuit|cuil/i,                                          label:'CUIT/CUIL',           group:'identidad',  priority:15 },
+    { re:/fecha.*nac|nac.*fecha|nacimiento/i,                   label:'Fecha de nacimiento', group:'identidad',  priority:16 },
+    { re:/edad/i,                                               label:'Edad',                group:'identidad',  priority:17 },
+    { re:/sexo|genero|género/i,                                 label:'Género',              group:'identidad',  priority:18 },
+    { re:/nacionalidad/i,                                       label:'Nacionalidad',        group:'identidad',  priority:19 },
+
+    // Contacto
+    { re:/^email$|^mail$|^e-mail$/i,                            label:'Email',               group:'contacto',   priority:30 },
+    { re:/email|mail|correo/i,                                  label:'Email',               group:'contacto',   priority:31 },
+    { re:/^tel[eé]fono$|^tel$|^celular$/i,                     label:'Teléfono',            group:'contacto',   priority:32 },
+    { re:/tel[eé]fono|celular|mobile|whatsapp/i,               label:'Teléfono',            group:'contacto',   priority:33 },
+    { re:/direcci[oó]n|domicilio|calle|address/i,              label:'Dirección',           group:'contacto',   priority:34 },
+    { re:/ciudad|localidad|city/i,                              label:'Ciudad',              group:'contacto',   priority:35 },
+    { re:/provincia|estado|region/i,                            label:'Provincia',           group:'contacto',   priority:36 },
+    { re:/pa[ií]s|country/i,                                    label:'País',               group:'contacto',   priority:37 },
+    { re:/c[oó]digo.*postal|cp\b|zip/i,                        label:'Código postal',       group:'contacto',   priority:38 },
+
+    // Escolar / institucional
+    { re:/sala|grado|curso|a[ñn]o.*escol/i,                    label:'Sala/Grado',          group:'escolar',    priority:50 },
+    { re:/nivel/i,                                              label:'Nivel',               group:'escolar',    priority:51 },
+    { re:/secci[oó]n|division/i,                               label:'Sección',             group:'escolar',    priority:52 },
+    { re:/turno/i,                                              label:'Turno',               group:'escolar',    priority:53 },
+    { re:/instituci[oó]n|colegio|escuela/i,                    label:'Institución',         group:'escolar',    priority:54 },
+    { re:/jornada/i,                                            label:'Jornada',             group:'escolar',    priority:55 },
+    { re:/beca/i,                                               label:'Beca',                group:'escolar',    priority:56 },
+    { re:/obra.social|prepaga|osde|swiss/i,                    label:'Obra social',         group:'escolar',    priority:57 },
+
+    // Membresía / socio
+    { re:/estado.*socio|socio.*estado|membresia|membres[ií]a/i,label:'Estado membresía',    group:'membresia',  priority:60 },
+    { re:/^estado$/i,                                           label:'Estado',              group:'membresia',  priority:61 },
+    { re:/n[uú]mero.*socio|socio.*n[uú]mero|n°.*socio/i,      label:'Nº socio',            group:'membresia',  priority:62 },
+    { re:/categor[ií]a/i,                                      label:'Categoría',           group:'membresia',  priority:63 },
+    { re:/cuota|arancel/i,                                      label:'Cuota',               group:'membresia',  priority:64 },
+    { re:/fecha.*ingreso|ingreso.*fecha/i,                      label:'Fecha ingreso',       group:'membresia',  priority:65 },
+
+    // Familia – madre
+    { re:/apellido.*nombre.*madre|nombre.*apellido.*madre|madre.*apellido|madre.*nombre/i, label:'Nombre madre', group:'familia', priority:70 },
+    { re:/^madre$|nombre.*madre|madre.*nombre/i,               label:'Nombre madre',        group:'familia',    priority:71 },
+    { re:/celular.*madre|tel.*madre|madre.*celular|madre.*tel/i,label:'Teléfono madre',     group:'familia',    priority:72 },
+    { re:/mail.*madre|email.*madre|madre.*mail|madre.*email/i, label:'Email madre',         group:'familia',    priority:73 },
+    // Familia – padre
+    { re:/apellido.*nombre.*padre|nombre.*apellido.*padre|padre.*apellido|padre.*nombre/i, label:'Nombre padre', group:'familia', priority:74 },
+    { re:/^padre$|nombre.*padre|padre.*nombre/i,               label:'Nombre padre',        group:'familia',    priority:75 },
+    { re:/celular.*padre|tel.*padre|padre.*celular|padre.*tel/i,label:'Teléfono padre',     group:'familia',    priority:76 },
+    { re:/mail.*padre|email.*padre|padre.*mail|padre.*email/i, label:'Email padre',         group:'familia',    priority:77 },
+    // Familia – emergencia / tutor
+    { re:/emergencia|tutor|apoderado|encargado/i,              label:'Contacto emergencia', group:'familia',    priority:78 },
+    { re:/c[oó]nyuge|esposa|esposo|pareja/i,                   label:'Cónyuge',            group:'familia',    priority:79 },
+
+    // Meta
+    { re:/observaci[oó]n|nota|comment|comentario/i,            label:'Observaciones',       group:'meta',       priority:90 },
+    { re:/fecha.*alta|fecha.*registro|alta/i,                  label:'Fecha alta',          group:'meta',       priority:91 },
+  ];
+
+  // ── 2. Para cada columna original, decidir su etiqueta canónica ──
+  // Usamos la primera regla que matchea; si ninguna, la columna queda "sin mapear"
+  function canonicalize(col){
+    const rule = COL_MAP.find(r => r.re.test(col));
+    return rule || { label: col, group:'otros', priority: 200 };
+  }
+
+  // ── 3. Construir el mapa columna original → canónico ──────────
+  // Detectamos duplicados: si dos cols originales mapean al mismo label,
+  // usamos la que tenga más datos no vacíos.
+  const colCandidates = {}; // label → [{colOrig, priority, filledCount}]
+  const allCols = mergedColumns.length ? mergedColumns : Object.keys(mergedData[0]||{}).filter(k=>!k.startsWith('__'));
+
+  allCols.forEach(col => {
+    const { label, group, priority } = canonicalize(col);
+    if(!colCandidates[label]) colCandidates[label] = [];
+    const filledCount = mergedData.filter(r => !isEmpty(getResolvedValue(r, col))).length;
+    colCandidates[label].push({ colOrig: col, priority, group, filledCount });
+  });
+
+  // Para cada label canónico, quedarse con la columna original más completa
+  const finalMap = {}; // label → colOrig
+  const finalMeta = {}; // label → {group, priority}
+  Object.entries(colCandidates).forEach(([label, candidates]) => {
+    candidates.sort((a,b) => b.filledCount - a.filledCount || a.priority - b.priority);
+    finalMap[label] = candidates[0].colOrig;
+    finalMeta[label] = { group: candidates[0].group, priority: candidates[0].priority };
+  });
+
+  // ── 4. Ordenar las columnas finales por priority ───────────────
+  const sortedLabels = Object.keys(finalMap).sort((a,b) => {
+    const pa = finalMeta[a]?.priority ?? 200;
+    const pb = finalMeta[b]?.priority ?? 200;
+    return pa - pb;
+  });
+
+  // ── 5. Columnas fijas al frente ───────────────────────────────
+  const FRONT_COLS = ['Apellido','Nombre','Nombre completo','DNI','Fecha de nacimiento','Email','Teléfono'];
+  const BACK_COLS  = ['Observaciones','Bases de origen','Roles','Estado depuración'];
+
+  const midLabels = sortedLabels.filter(l => !FRONT_COLS.includes(l) && !BACK_COLS.includes(l));
+  const orderedLabels = [
+    ...FRONT_COLS.filter(l => finalMap[l]),
+    ...midLabels,
+    ...BACK_COLS.filter(l => finalMap[l]),
+    // Bases de origen y Roles los agregamos siempre al final aunque no estén en finalMap
+  ];
+
+  // ── 6. Construir las filas del Excel ─────────────────────────
+  const headers = [
+    ...orderedLabels,
+    'Roles',
+    'Bases de origen',
+    'Estado depuración',
+  ];
+
+  const rows = mergedData.map(row => {
+    const obj = {};
+    orderedLabels.forEach(label => {
+      const colOrig = finalMap[label];
+      if(!colOrig){ obj[label] = ''; return; }
+      const v = getResolvedValue(row, colOrig);
+      obj[label] = isEmpty(v) ? '' : String(v);
+    });
+    obj['Roles']              = detectRoles(row).join(', ');
+    obj['Bases de origen']    = (row.__sources||[]).join(' + ');
+    obj['Estado depuración']  = rowStatus[row.__id] || '';
+    return obj;
+  });
+
+  // ── 7. Armar el workbook con estilos de encabezado ───────────
+  const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
+
+  // Ancho automático por columna
+  const colWidths = headers.map(h => ({
+    wch: Math.max(h.length, ...rows.map(r => String(r[h]||'').length).slice(0,200))
+  }));
+  ws['!cols'] = colWidths;
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Personas');
+
+  return { wb, rows, headers };
 }
 
 function renderProfilesList(){
