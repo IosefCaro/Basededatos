@@ -2127,9 +2127,11 @@ async function _doSaveProfilesToStorage(){
           target_name: l.targetName || null,
         }));
       });
+      console.log('[vinculos] guardando', vinculosRows.length, 'filas para', vinculosPersonIds.length, 'personas', vinculosRows);
       if(vinculosRows.length){
-        const { error: insErr } = await supa.from('vinculos').insert(vinculosRows);
+        const { error: insErr, count } = await supa.from('vinculos').insert(vinculosRows, { count:'exact' });
         if(insErr) throw new Error('vinculos insert: ' + insErr.message);
+        console.log('[vinculos] insert OK, count reportado por Supabase:', count);
       }
     }
 
@@ -2247,6 +2249,7 @@ async function loadProfilesFromStorage(){
     // ── vínculos ─────────────────────────────────────────────
     const { data: vData, error: vErr } = await supa.from('vinculos').select('*');
     if(vErr) console.error('Error cargando vínculos:', vErr.message);
+    console.log('[vinculos] cargados desde Supabase:', vData?.length||0, 'filas', vData);
     profileLinks = {};
     (vData||[]).forEach(v => {
       if(!profileLinks[v.persona_id]) profileLinks[v.persona_id] = [];
@@ -5854,9 +5857,13 @@ function openAddLinkForm(id){
     confirmBtn.disabled = false;
   });
 
-  document.addEventListener('click', function outsideClick(e){
+  if(window._linkFormOutsideClickHandler){
+    document.removeEventListener('click', window._linkFormOutsideClickHandler);
+  }
+  window._linkFormOutsideClickHandler = function(e){
     if(!formEl.contains(e.target)){ resultsEl.classList.add('hidden'); }
-  });
+  };
+  document.addEventListener('click', window._linkFormOutsideClickHandler);
 
   document.getElementById('btnConfirmLink').addEventListener('click', ()=>{
     if(!selectedTarget) return;
