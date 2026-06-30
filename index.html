@@ -5666,6 +5666,84 @@ function renderProfileLinks(id, row){
   });
 }
 
+// Crea un vínculo manual en AMBOS perfiles a la vez (A→B y B→A con el tipo invertido),
+// y si el vínculo es "cónyuge", propaga automáticamente los hijos que cada uno ya
+// tenía vinculados hacia el otro — así no hace falta cargar 3 veces la misma familia.
+function addBidirectionalLink(idA, idB, nameB, type){
+  const rowA = mergedData.find(r=>String(r.__id)===String(idA));
+  const rowB = mergedData.find(r=>String(r.__id)===String(idB));
+  const nameA = rowA ? getPersonDisplayName(rowA) : `Persona #${idA}`;
+  const inverseType = LINK_INVERSE[type] || type;
+
+  const hasLink = (id, targetId, t)=> (profileLinks[id]||[]).some(lk=> String(lk.targetId)===String(targetId) && lk.type===t);
+
+  if(!profileLinks[idA]) profileLinks[idA]=[];
+  if(!profileLinks[idB]) profileLinks[idB]=[];
+
+  if(!hasLink(idA, idB, type)){
+    profileLinks[idA].push({ type, targetId:idB, targetName:nameB, auto:false });
+    addTimelineEntry(idA, 'link', `Vínculo agregado: ${type}`, nameB);
+  }
+  if(!hasLink(idB, idA, inverseType)){
+    profileLinks[idB].push({ type:inverseType, targetId:idA, targetName:nameA, auto:false });
+    addTimelineEntry(idB, 'link', `Vínculo agregado: ${inverseType}`, nameA);
+  }
+
+  // Si es un vínculo de pareja, propagar los hijos existentes de cada lado hacia el otro
+  if(type==='cónyuge' || inverseType==='cónyuge'){
+    const hijosA = (profileLinks[idA]||[]).filter(lk=> lk.type==='hijo/a' && lk.targetId);
+    const hijosB = (profileLinks[idB]||[]).filter(lk=> lk.type==='hijo/a' && lk.targetId);
+
+    hijosA.forEach(h=>{
+      if(!hasLink(idB, h.targetId, 'hijo/a')){
+        profileLinks[idB].push({ type:'hijo/a', targetId:h.targetId, targetName:h.targetName, auto:false });
+        addTimelineEntry(idB, 'link', 'Vínculo agregado: hijo/a', h.targetName);
+      }
+      // y el hijo también debe quedar vinculado al nuevo cónyuge como padre/madre
+      const hijoLinks = profileLinks[h.targetId] || (profileLinks[h.targetId]=[]);
+      if(!hijoLinks.some(lk=> String(lk.targetId)===String(idB))){
+        const parentType = rowB && /femenin|mujer/i.test(String(getResolvedValue(rowB,'Género')||'')) ? 'madre' : 'padre';
+        hijoLinks.push({ type:parentType, targetId:idB, targetName:nameB, auto:false });
+      }
+    });
+    hijosB.forEach(h=>{
+      if(!hasLink(idA, h.targetId, 'hijo/a')){
+        profileLinks[idA].push({ type:'hijo/a', targetId:h.targetId, targetName:h.targetName, auto:false });
+        addTimelineEntry(idA, 'link', 'Vínculo agregado: hijo/a', h.targetName);
+      }
+      const hijoLinks = profileLinks[h.targetId] || (profileLinks[h.targetId]=[]);
+      if(!hijoLinks.some(lk=> String(lk.targetId)===String(idA))){
+        const parentType = rowA && /femenin|mujer/i.test(String(getResolvedValue(rowA,'Género')||'')) ? 'madre' : 'padre';
+        hijoLinks.push({ type:parentType, targetId:idA, targetName:nameA, auto:false });
+      }
+    });
+  }
+
+  // Si el vínculo es "hijo/a" hacia un padre/madre que ya tiene cónyuge, también
+  // vincular automáticamente al hijo con ese cónyuge.
+  if(type==='hijo/a' || inverseType==='padre' || inverseType==='madre'){
+    const parentId = idB; // quien recibe al hijo
+    const conyugeLink = (profileLinks[parentId]||[]).find(lk=> lk.type==='cónyuge' && lk.targetId);
+    if(conyugeLink){
+      const childId = idA;
+      const childName = nameA;
+      const conyugeId = conyugeLink.targetId;
+      const conyugeName = conyugeLink.targetName;
+      if(!hasLink(conyugeId, childId, 'hijo/a')){
+        if(!profileLinks[conyugeId]) profileLinks[conyugeId]=[];
+        profileLinks[conyugeId].push({ type:'hijo/a', targetId:childId, targetName:childName, auto:false });
+        addTimelineEntry(conyugeId, 'link', 'Vínculo agregado: hijo/a', childName);
+      }
+      const childLinks = profileLinks[childId] || (profileLinks[childId]=[]);
+      if(!childLinks.some(lk=> String(lk.targetId)===String(conyugeId))){
+        const conyugeRow = mergedData.find(r=>String(r.__id)===String(conyugeId));
+        const parentType = conyugeRow && /femenin|mujer/i.test(String(getResolvedValue(conyugeRow,'Género')||'')) ? 'madre' : 'padre';
+        childLinks.push({ type:parentType, targetId:conyugeId, targetName:conyugeName, auto:false });
+      }
+    }
+  }
+}
+
 function openAddLinkForm(id){
   const formEl = document.getElementById('addLinkForm');
   formEl.classList.remove('hidden');
@@ -5736,9 +5814,7 @@ function openAddLinkForm(id){
   document.getElementById('btnConfirmLink').addEventListener('click', ()=>{
     if(!selectedTarget) return;
     const type = document.getElementById('linkTypeSelect').value;
-    if(!profileLinks[id]) profileLinks[id]=[];
-    profileLinks[id].push({ type, targetId: selectedTarget.id, targetName: selectedTarget.name, auto: false });
-    addTimelineEntry(id, 'link', `Vínculo agregado: ${type}`, selectedTarget.name);
+    addBidirectionalLink(id, selectedTarget.id, selectedTarget.name, type);
     formEl.classList.add('hidden');
     renderProfileLinks(id, mergedData.find(r=>String(r.__id)===String(id)));
     renderProfileTimeline(id);
