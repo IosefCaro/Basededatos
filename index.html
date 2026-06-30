@@ -465,7 +465,13 @@
   /* Fields grid */
   .profile-fields{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
   .profile-field{ display: flex; flex-direction: column; gap: 2px; }
-  .profile-field-label{ font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+  .profile-field-label{ font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; display:flex; align-items:center; gap:6px; }
+  .profile-field-hide{
+    background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:10px;
+    padding:0; line-height:1; opacity:0; transition:opacity .1s;
+  }
+  .profile-field:hover .profile-field-hide{ opacity:0.6; }
+  .profile-field-hide:hover{ opacity:1 !important; color:var(--conflict); }
   .profile-field-value{ font-size: 13px; font-weight: 500; border-radius:3px; transition: background .1s; }
   .profile-field-editable{ cursor: pointer; }
   .profile-field-editable:hover{ background: rgba(47,107,82,0.08); outline: 1px solid var(--accent); padding: 1px 4px; }
@@ -491,6 +497,19 @@
   /* Add link form */
   .add-link-form{ margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
   .add-link-form select, .add-link-form input{ font-size: 13px; }
+  .link-search-results{
+    position:absolute; top:100%; left:0; right:0; z-index:50; margin-top:2px;
+    background:var(--panel); border:1px solid var(--border); border-radius:4px;
+    max-height:220px; overflow-y:auto; box-shadow:0 6px 16px rgba(43,40,32,0.18);
+  }
+  .link-search-item{
+    padding:8px 12px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;
+    font-size:13px; border-bottom:1px solid var(--border);
+  }
+  .link-search-item:last-child{ border-bottom:none; }
+  .link-search-item:hover{ background:var(--panel-2); }
+  .link-search-meta{ font-family:var(--mono); font-size:10px; color:var(--text-dim); }
+  .link-search-empty{ padding:10px 12px; font-size:12px; color:var(--text-dim); }
 
   /* Comment */
   #profileComment{
@@ -1696,6 +1715,8 @@ let profileEvents = {}; // {__id: [{type, date, desc, relatedId, relatedName}]}
 let profileGroups = {}; // {__id: [{name, role, since, until}]}
 let profileTimeline = {}; // {__id: [{ts, action, detail}]}
 let activeProfileId = null;
+let hiddenColumns = new Set(); // columnas ocultadas a mano por el usuario (basura detectada)
+let showEmptyFields = false; // mostrar campos vacíos en el perfil (por defecto ocultos para no saturar)
 
 let mergedClusters = []; // array de arrays de filas crudas {data, sourceIdx, sourceName}, una por persona del resultado
 let mergedColInfo = {}; // columna normalizada -> {type, field} (para combinar/comparar valores)
@@ -2021,11 +2042,23 @@ async function saveProfilesToStorage(){
   setSyncStatus('saving');
   try {
     // ── 1. sesion (singleton de columnas + fuentes) ──────────
-    await supa.from('sesion').upsert({
-      id: 'singleton',
-      merged_columns: mergedColumns,
-      source_names: sources.map(s=>s.name),
-    }, { onConflict: 'id' });
+    try {
+      await supa.from('sesion').upsert({
+        id: 'singleton',
+        merged_columns: mergedColumns,
+        source_names: sources.map(s=>s.name),
+        hidden_columns: [...hiddenColumns],
+      }, { onConflict: 'id' });
+    } catch(e){
+      // Si la columna hidden_columns no existe todavía en la tabla, reintentar sin ella
+      await supa.from('sesion').upsert({
+        id: 'singleton',
+        merged_columns: mergedColumns,
+        source_names: sources.map(s=>s.name),
+      }, { onConflict: 'id' });
+    }
+    // Respaldo local (por si la tabla sesion aún no tiene la columna hidden_columns)
+    try{ localStorage.setItem('comunidad_hiddenColumns', JSON.stringify([...hiddenColumns])); }catch(e){}
 
     // ── 2. personas (upsert en lotes de 200) ─────────────────
     const personasRows = mergedData.map(row => {
@@ -2138,6 +2171,7 @@ async function loadProfilesFromStorage(){
     const { data: sesData } = await supa.from('sesion').select('*').eq('id','singleton').single();
     if(!sesData) { setSyncStatus('ok','Sin datos'); return false; }
     mergedColumns = sesData.merged_columns || [];
+    hiddenColumns = new Set(sesData.hidden_columns || JSON.parse(localStorage.getItem('comunidad_hiddenColumns')||'[]'));
 
     // ── personas (todas) ──────────────────────────────────────
     let allPersonas = [];
@@ -4756,6 +4790,7 @@ function renderProfilesExportBar(){
     <div class="export-hint">${mergedData.length} personas · Descargar:</div>
     <button class="secondary" id="btnProfilesExportXlsx">📥 Excel</button>
     <button class="secondary" id="btnProfilesExportCsv">📄 CSV</button>
+    ${hiddenColumns.size>0 ? `<button class="secondary" id="btnManageHidden" style="font-size:10px;">👁 ${hiddenColumns.size} campo${hiddenColumns.size>1?'s':''} oculto${hiddenColumns.size>1?'s':''}</button>` : ''}
   `;
   document.getElementById('btnProfilesExportXlsx').addEventListener('click', ()=>{
     const { wb } = buildSmartExport();
@@ -4767,6 +4802,22 @@ function renderProfilesExportBar(){
     rows.forEach(r => lines.push(headers.map(h => csvEscape(r[h]??'')).join(',')));
     downloadBlob(lines.join('\n'), 'base_unificada.csv', 'text/csv;charset=utf-8;');
   });
+  const hiddenBtn = document.getElementById('btnManageHidden');
+  if(hiddenBtn) hiddenBtn.addEventListener('click', openHiddenColumnsManager);
+}
+
+function openHiddenColumnsManager(){
+  const list = [...hiddenColumns];
+  const choice = prompt(
+    `Campos ocultos actualmente:\n${list.map((c,i)=>`${i+1}. ${FIELD_LABELS[c]||c}`).join('\n')}\n\nEscribí el número del que querés volver a mostrar, o dejá vacío para cancelar:`
+  );
+  const idx = parseInt(choice,10)-1;
+  if(!isNaN(idx) && list[idx]){
+    hiddenColumns.delete(list[idx]);
+    saveProfilesToStorage();
+    renderProfilesList();
+    if(activeProfileId) renderProfileCard(activeProfileId);
+  }
 }
 
 /* ============================================================
@@ -5041,20 +5092,30 @@ function renderProfileCard(id){
     saveProfilesToStorage();
   };
 
-  // Campos de datos personales — editables con click
-  // Mostrar todos (incluidos vacíos) para que se puedan completar
+  // Campos de datos personales — editables con click, ocultables si son basura
   const fieldsEl = document.getElementById('profileFields');
-  const allEditableCols = mergedColumns.filter(c=>{
+  const allCols = mergedColumns.filter(c=>{
     if(SKIP_IN_FIELDS.has(c)) return false;
+    if(hiddenColumns.has(c)) return false;
     if(FAMILY_COL_PATTERNS.some(p=> p.re.test(c))) return false;
     return true;
   });
 
-  if(allEditableCols.length===0){
+  const colsWithData = allCols.filter(c=> !isEmpty(getResolvedValue(row, c)));
+  const colsEmpty = allCols.filter(c=> isEmpty(getResolvedValue(row, c)));
+  const visibleCols = showEmptyFields ? allCols : colsWithData;
+
+  const toggleHtml = colsEmpty.length>0
+    ? `<button class="secondary" id="btnToggleEmptyFields" style="font-size:10px;padding:3px 8px;grid-column:1/-1;justify-self:start;">
+        ${showEmptyFields ? `▲ Ocultar ${colsEmpty.length} campo${colsEmpty.length>1?'s':''} vacío${colsEmpty.length>1?'s':''}` : `▼ Mostrar ${colsEmpty.length} campo${colsEmpty.length>1?'s':''} vacío${colsEmpty.length>1?'s':''}`}
+      </button>`
+    : '';
+
+  if(visibleCols.length===0 && !toggleHtml){
     fieldsEl.innerHTML = '<div class="profile-field-empty" style="grid-column:1/-1">Sin datos registrados.</div>';
   } else {
     const DOB_COL = /fecha.*nac|nac.*fecha|birthday|birth.*date|fecnac/i;
-    fieldsEl.innerHTML = allEditableCols.map(col=>{
+    fieldsEl.innerHTML = visibleCols.map(col=>{
       const val = getResolvedValue(row, col);
       const label = FIELD_LABELS[col] || col;
       const isEmpty_ = isEmpty(val);
@@ -5064,14 +5125,32 @@ function renderProfileCard(id){
         if(age !== null) ageHtml = `<span style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-left:6px;">${age} años</span>`;
       }
       return `<div class="profile-field">
-        <div class="profile-field-label">${escHtml(label)}</div>
+        <div class="profile-field-label">${escHtml(label)}
+          <button class="profile-field-hide" data-col="${escAttr(col)}" title="Ocultar este campo en todos los perfiles (no borra datos, solo deja de mostrarlo)">✕</button>
+        </div>
         <div class="profile-field-value profile-field-editable ${isEmpty_?'profile-field-empty':''}"
              data-col="${escAttr(col)}" data-id="${id}"
              title="Click para editar">
           ${isEmpty_ ? '<em style="font-size:11px;">— click para completar</em>' : escHtml(String(val))}${ageHtml}
         </div>
       </div>`;
-    }).join('');
+    }).join('') + toggleHtml;
+
+    const toggleBtn = document.getElementById('btnToggleEmptyFields');
+    if(toggleBtn) toggleBtn.addEventListener('click', ()=>{ showEmptyFields = !showEmptyFields; renderProfileCard(id); });
+
+    // Ocultar campo (afecta a todos los perfiles — son columnas basura del Excel original)
+    fieldsEl.querySelectorAll('.profile-field-hide').forEach(btn=>{
+      btn.addEventListener('click', e=>{
+        e.stopPropagation();
+        const col = btn.dataset.col;
+        if(confirm(`¿Ocultar la columna "${FIELD_LABELS[col]||col}" en todos los perfiles? No se borran los datos, solo se deja de mostrar.`)){
+          hiddenColumns.add(col);
+          saveProfilesToStorage();
+          renderProfileCard(id);
+        }
+      });
+    });
 
     // Click para editar cualquier campo
     fieldsEl.querySelectorAll('.profile-field-editable').forEach(cell=>{
@@ -5590,23 +5669,76 @@ function renderProfileLinks(id, row){
 function openAddLinkForm(id){
   const formEl = document.getElementById('addLinkForm');
   formEl.classList.remove('hidden');
-  // Armar lista de personas para el select (excluir la actual)
-  const options = mergedData.filter(r=>String(r.__id)!==String(id))
-    .map(r=>`<option value="${r.__id}">${escHtml(getPersonDisplayName(r))}</option>`).join('');
+  let selectedTarget = null; // {id, name}
+
   formEl.innerHTML = `
-    <select id="linkTypeSelect">${LINK_TYPE_OPTIONS.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
-    <select id="linkTargetSelect" style="flex:1; min-width:160px;">${options}</select>
-    <button class="primary" id="btnConfirmLink" style="font-size:11px; padding:6px 12px;">Vincular</button>
-    <button class="secondary" id="btnCancelLink" style="font-size:11px; padding:6px 12px;">Cancelar</button>
+    <div class="filter-group">
+      <label>Vínculo</label>
+      <select id="linkTypeSelect">${LINK_TYPE_OPTIONS.map(t=>`<option value="${t}">${t}</option>`).join('')}</select>
+    </div>
+    <div class="filter-group" style="flex:1; min-width:220px; position:relative;">
+      <label>Persona</label>
+      <input type="text" id="linkSearchInput" placeholder="Escribí un nombre…" autocomplete="off">
+      <div id="linkSearchResults" class="link-search-results hidden"></div>
+    </div>
+    <div class="filter-group" style="align-self:flex-end;">
+      <button class="primary" id="btnConfirmLink" style="font-size:11px; padding:6px 12px;" disabled>Vincular</button>
+      <button class="secondary" id="btnCancelLink" style="font-size:11px; padding:6px 12px;">Cancelar</button>
+    </div>
   `;
+
+  const input = document.getElementById('linkSearchInput');
+  const resultsEl = document.getElementById('linkSearchResults');
+  const confirmBtn = document.getElementById('btnConfirmLink');
+
+  function renderResults(term){
+    const norm = normalizeStr(term);
+    if(!norm){ resultsEl.classList.add('hidden'); resultsEl.innerHTML=''; return; }
+    const matches = mergedData
+      .filter(r=> String(r.__id)!==String(id))
+      .filter(r=> normalizeStr(getPersonDisplayName(r)).includes(norm))
+      .slice(0, 8);
+    if(matches.length===0){
+      resultsEl.innerHTML = '<div class="link-search-empty">Sin coincidencias.</div>';
+    } else {
+      resultsEl.innerHTML = matches.map(r=>{
+        const name = getPersonDisplayName(r);
+        const fuente = (r.__sources||[]).slice(0,1).join('');
+        return `<div class="link-search-item" data-id="${r.__id}" data-name="${escAttr(name)}">
+          <span>${escHtml(name)}</span>
+          <span class="link-search-meta">${escHtml(fuente.replace(/\.[a-z]+$/i,''))}</span>
+        </div>`;
+      }).join('');
+    }
+    resultsEl.classList.remove('hidden');
+  }
+
+  input.addEventListener('input', ()=>{
+    selectedTarget = null;
+    confirmBtn.disabled = true;
+    renderResults(input.value);
+  });
+  input.addEventListener('focus', ()=>{ if(input.value) renderResults(input.value); });
+
+  resultsEl.addEventListener('click', e=>{
+    const item = e.target.closest('.link-search-item');
+    if(!item) return;
+    selectedTarget = { id: parseInt(item.dataset.id,10), name: item.dataset.name };
+    input.value = item.dataset.name;
+    resultsEl.classList.add('hidden');
+    confirmBtn.disabled = false;
+  });
+
+  document.addEventListener('click', function outsideClick(e){
+    if(!formEl.contains(e.target)){ resultsEl.classList.add('hidden'); }
+  });
+
   document.getElementById('btnConfirmLink').addEventListener('click', ()=>{
+    if(!selectedTarget) return;
     const type = document.getElementById('linkTypeSelect').value;
-    const targetId = parseInt(document.getElementById('linkTargetSelect').value, 10);
-    const targetRow = mergedData.find(r=>String(r.__id)===String(targetId));
-    const targetName = targetRow ? getPersonDisplayName(targetRow) : '?';
     if(!profileLinks[id]) profileLinks[id]=[];
-    profileLinks[id].push({ type, targetId, targetName, auto: false });
-    addTimelineEntry(id, 'link', `Vínculo agregado: ${type}`, targetName);
+    profileLinks[id].push({ type, targetId: selectedTarget.id, targetName: selectedTarget.name, auto: false });
+    addTimelineEntry(id, 'link', `Vínculo agregado: ${type}`, selectedTarget.name);
     formEl.classList.add('hidden');
     renderProfileLinks(id, mergedData.find(r=>String(r.__id)===String(id)));
     renderProfileTimeline(id);
