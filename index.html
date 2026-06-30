@@ -78,8 +78,10 @@
   .manage-table tr.flagged{ background:rgba(179,64,47,0.05); }
   .manage-table tr.flagged:hover{ background:rgba(179,64,47,0.09); }
   .manage-table input[type=checkbox]{ accent-color:var(--accent); width:15px; height:15px; }
-  .manage-name{ font-weight:600; }
+  .manage-name{ font-weight:600; cursor:pointer; }
+  .manage-name:hover{ color:var(--accent); text-decoration:underline; }
   .manage-name-warn{ color:var(--conflict); }
+  .manage-name-warn:hover{ color:var(--conflict); }
   .manage-meta{ font-family:var(--mono); font-size:10.5px; color:var(--text-dim); }
   .manage-del-btn{
     background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:14px;
@@ -6138,7 +6140,7 @@ function renderManageTable(){
     const statusLabel = status==='ok' ? '✓ Verificado' : status==='pendiente' ? '⏳ Pendiente' : status==='dudoso' ? '? Dudoso' : '—';
     return `<tr class="${flagged?'flagged':''}" data-id="${row.__id}">
       <td><input type="checkbox" class="manage-row-chk" data-id="${row.__id}" ${checked?'checked':''}></td>
-      <td><span class="manage-name ${flagged?'manage-name-warn':''}">${escHtml(name)}</span></td>
+      <td><span class="manage-name ${flagged?'manage-name-warn':''}" data-id="${row.__id}" title="Ver perfil">${escHtml(name)}</span></td>
       <td>${detectRoles(row).join(', ')}</td>
       <td><span class="manage-data-count ${filledCount<=1?'low':''}">${filledCount}</span></td>
       <td>${links || '—'}</td>
@@ -6153,6 +6155,12 @@ function renderManageTable(){
       const id = e.target.dataset.id;
       if(e.target.checked) manageSelectedIds.add(id); else manageSelectedIds.delete(id);
       renderManageBulkBar();
+    });
+  });
+  tbody.querySelectorAll('.manage-name[data-id]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      activeProfileId = el.dataset.id;
+      switchMode('profiles');
     });
   });
   tbody.querySelectorAll('.manage-del-btn').forEach(btn=>{
