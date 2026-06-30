@@ -466,7 +466,9 @@
   .profile-fields{ display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
   .profile-field{ display: flex; flex-direction: column; gap: 2px; }
   .profile-field-label{ font-family: var(--mono); font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; }
-  .profile-field-value{ font-size: 13px; font-weight: 500; }
+  .profile-field-value{ font-size: 13px; font-weight: 500; border-radius:3px; transition: background .1s; }
+  .profile-field-editable{ cursor: pointer; }
+  .profile-field-editable:hover{ background: rgba(47,107,82,0.08); outline: 1px solid var(--accent); padding: 1px 4px; }
   .profile-field-empty{ color: var(--text-dim); font-style: italic; }
 
   /* Links */
@@ -990,7 +992,10 @@
             </div>
             <div class="profile-sections">
               <div class="profile-section">
-                <div class="profile-section-title">Datos personales</div>
+                <div class="profile-section-title">
+                  Datos personales
+                  <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-left:8px;font-weight:400;">✎ click para editar</span>
+                </div>
                 <div class="profile-fields" id="profileFields"></div>
               </div>
               <div class="profile-section">
@@ -4582,11 +4587,74 @@ function detectAutoLinks(row){
 }
 
 // Inicializar profileLinks con los vínculos automáticos detectados (solo si no hay manual ya)
+// Mapa de inversión de vínculos: si A es "madre" de B → B es "hijo/a" de A
+const LINK_INVERSE = {
+  'madre':    'hijo/a',
+  'padre':    'hijo/a',
+  'hijo/a':   'padre',
+  'tutor':    'tutelado',
+  'tutelado': 'tutor',
+  'apoderado':'representado',
+  'representado':'apoderado',
+  'cónyuge':  'cónyuge',
+  'hermano/a':'hermano/a',
+  'familiar': 'familiar',
+  'progenitor':'hijo/a',
+};
+
 function initProfileLinks(){
+  // Paso 1: detectar vínculos directos desde columnas de cada perfil
+  const directLinks = {};
   mergedData.forEach(row=>{
-    if(profileLinks[row.__id]) return; // ya tiene vínculos (manuales o de un proyecto guardado)
-    const auto = detectAutoLinks(row);
-    if(auto.length>0) profileLinks[row.__id] = auto;
+    const id = row.__id;
+    const detected = detectAutoLinks(row);
+    if(detected.length) directLinks[id] = detected;
+  });
+
+  // Paso 2: construir vínculos en ambas direcciones
+  const allLinks = {}; // {id: Map<key, link>} — Map para deduplicar
+  const addLink = (id, link)=>{
+    const key = `${link.type}::${link.targetId||link.targetName}`;
+    if(!allLinks[id]) allLinks[id] = new Map();
+    if(!allLinks[id].has(key)) allLinks[id].set(key, link);
+  };
+
+  Object.entries(directLinks).forEach(([idStr, links])=>{
+    const id = parseInt(idStr);
+    links.forEach(lk=>{
+      addLink(id, lk);
+      if(lk.targetId){
+        const inverseType = LINK_INVERSE[lk.type] || 'familiar';
+        const myRow = mergedData.find(r=>r.__id===id);
+        const myName = myRow ? getPersonDisplayName(myRow) : `Persona #${id}`;
+        addLink(lk.targetId, { type: inverseType, targetId: id, targetName: myName, auto: true });
+      }
+    });
+  });
+
+  // Paso 3: si dos perfiles son madre y padre del mismo hijo → cónyuge entre sí
+  mergedData.forEach(row=>{
+    const id = row.__id;
+    const myLinks = allLinks[id] ? [...allLinks[id].values()] : [];
+    const madreId = myLinks.find(lk=> lk.type==='madre' && lk.targetId)?.targetId;
+    const padreId = myLinks.find(lk=> lk.type==='padre' && lk.targetId)?.targetId;
+    if(madreId && padreId){
+      const madreRow = mergedData.find(r=>r.__id===madreId);
+      const padreRow = mergedData.find(r=>r.__id===padreId);
+      if(madreRow && padreRow){
+        addLink(madreId, { type:'cónyuge', targetId:padreId, targetName:getPersonDisplayName(padreRow), auto:true });
+        addLink(padreId, { type:'cónyuge', targetId:madreId, targetName:getPersonDisplayName(madreRow), auto:true });
+      }
+    }
+  });
+
+  // Paso 4: fusionar con vínculos manuales existentes sin sobrescribirlos
+  mergedData.forEach(row=>{
+    const id = row.__id;
+    const existing = profileLinks[id]||[];
+    const existingKeys = new Set(existing.map(lk=>`${lk.type}::${lk.targetId||lk.targetName}`));
+    const newAuto = allLinks[id] ? [...allLinks[id].values()].filter(lk=> !existingKeys.has(`${lk.type}::${lk.targetId||lk.targetName}`)) : [];
+    if(newAuto.length || existing.length) profileLinks[id] = [...existing, ...newAuto];
   });
 }
 
@@ -4973,35 +5041,72 @@ function renderProfileCard(id){
     saveProfilesToStorage();
   };
 
-  // Campos de datos personales — excluir:
-  // 1. Campos internos (__id, __sources)
-  // 2. Columnas de vínculos familiares (madre, padre, tutor, hermano, etc.)
-  // 3. Columnas completamente vacías para esta persona
+  // Campos de datos personales — editables con click
+  // Mostrar todos (incluidos vacíos) para que se puedan completar
   const fieldsEl = document.getElementById('profileFields');
-  const fieldCols = mergedColumns.filter(c=>{
+  const allEditableCols = mergedColumns.filter(c=>{
     if(SKIP_IN_FIELDS.has(c)) return false;
     if(FAMILY_COL_PATTERNS.some(p=> p.re.test(c))) return false;
-    const val = getResolvedValue(row, c);
-    return !isEmpty(val); // solo mostrar si tiene dato
+    return true;
   });
 
-  if(fieldCols.length===0){
+  if(allEditableCols.length===0){
     fieldsEl.innerHTML = '<div class="profile-field-empty" style="grid-column:1/-1">Sin datos registrados.</div>';
   } else {
     const DOB_COL = /fecha.*nac|nac.*fecha|birthday|birth.*date|fecnac/i;
-    fieldsEl.innerHTML = fieldCols.map(col=>{
+    fieldsEl.innerHTML = allEditableCols.map(col=>{
       const val = getResolvedValue(row, col);
       const label = FIELD_LABELS[col] || col;
-      let extra = '';
-      if(DOB_COL.test(col)){
+      const isEmpty_ = isEmpty(val);
+      let ageHtml = '';
+      if(!isEmpty_ && DOB_COL.test(col)){
         const age = calcAge(String(val));
-        if(age !== null) extra = `<span style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-left:6px;">${age} años</span>`;
+        if(age !== null) ageHtml = `<span style="font-family:var(--mono);font-size:11px;color:var(--accent);margin-left:6px;">${age} años</span>`;
       }
       return `<div class="profile-field">
         <div class="profile-field-label">${escHtml(label)}</div>
-        <div class="profile-field-value">${escHtml(String(val))}${extra}</div>
+        <div class="profile-field-value profile-field-editable ${isEmpty_?'profile-field-empty':''}"
+             data-col="${escAttr(col)}" data-id="${id}"
+             title="Click para editar">
+          ${isEmpty_ ? '<em style="font-size:11px;">— click para completar</em>' : escHtml(String(val))}${ageHtml}
+        </div>
       </div>`;
     }).join('');
+
+    // Click para editar cualquier campo
+    fieldsEl.querySelectorAll('.profile-field-editable').forEach(cell=>{
+      cell.addEventListener('click', ()=>{
+        if(cell.querySelector('input')) return; // ya editando
+        const col = cell.dataset.col;
+        const curVal = getResolvedValue(row, col)||'';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.value = String(curVal);
+        input.style.cssText = 'width:100%;font-size:13px;padding:4px 6px;border:1.5px solid var(--accent);border-radius:3px;background:var(--panel);color:var(--text);outline:none;';
+        cell.innerHTML = '';
+        cell.appendChild(input);
+        input.focus();
+        input.select();
+
+        const save = ()=>{
+          const newVal = input.value.trim().toUpperCase();
+          const oldVal = String(curVal).toUpperCase();
+          if(newVal !== oldVal && newVal !== ''){
+            if(!conflictResolutions[id]) conflictResolutions[id]={};
+            conflictResolutions[id][col] = newVal;
+            row[col] = newVal;
+            addTimelineEntry(id,'comment',`Editado: ${FIELD_LABELS[col]||col}`,`"${curVal}" → "${newVal}"`);
+            saveProfilesToStorage();
+          }
+          renderProfileCard(id);
+        };
+        input.addEventListener('blur', save);
+        input.addEventListener('keydown', e=>{
+          if(e.key==='Enter'){ e.preventDefault(); input.blur(); }
+          if(e.key==='Escape'){ input.removeEventListener('blur', save); renderProfileCard(id); }
+        });
+      });
+    });
   }
 
   // Vínculos familiares
