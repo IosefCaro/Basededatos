@@ -3288,6 +3288,46 @@ function suggestPhoneFix(v){
 
 
 // Construye una fila fusionada a partir de un grupo de filas crudas {data, sourceIdx, sourceName}
+// Genera un ID estable y persistente por persona, basado en sus datos clave
+// (DNI/CUIT > email > teléfono > nombre completo), en lugar de la posición en
+// el array. Esto es CRÍTICO: si el ID cambiara cada vez que se reprocesan las
+// bases, todos los vínculos familiares, eventos y comentarios guardados en
+// Supabase quedarían apuntando a un ID que ya no corresponde a nadie.
+function generateStableId(merged){
+  // Buscar el primer valor no vacío entre las claves más identificatorias
+  const candidates = [];
+  Object.entries(mergedColInfo).forEach(([norm, info])=>{
+    if(info.field !== 'dni') return;
+    const col = mergedColumns.find(c=> normalizeStr(c).replace(/[_\s]/g,'')===norm);
+    if(col && !isEmpty(merged[col])) candidates.push('dni:'+normalizeDNI(merged[col]));
+  });
+  if(candidates.length===0){
+    Object.entries(mergedColInfo).forEach(([norm, info])=>{
+      if(info.field !== 'email') return;
+      const col = mergedColumns.find(c=> normalizeStr(c).replace(/[_\s]/g,'')===norm);
+      if(col && !isEmpty(merged[col])) candidates.push('email:'+normalizeStr(merged[col]));
+    });
+  }
+  if(candidates.length===0){
+    Object.entries(mergedColInfo).forEach(([norm, info])=>{
+      if(info.field !== 'telefono') return;
+      const col = mergedColumns.find(c=> normalizeStr(c).replace(/[_\s]/g,'')===norm);
+      if(col && !isEmpty(merged[col])) candidates.push('tel:'+normalizePhone(merged[col]));
+    });
+  }
+  if(candidates.length===0){
+    // último recurso: nombre completo normalizado (menos estable, pero mejor que nada)
+    const nameCol = mergedColumns.find(c=> /nombre|apellido/i.test(c));
+    const parts = mergedColumns.filter(c=> /nombre|apellido/i.test(c)).map(c=> merged[c]).filter(v=>!isEmpty(v));
+    if(parts.length) candidates.push('nombre:'+normalizeStr(parts.join(' ')));
+  }
+  const seed = candidates.length ? candidates.sort().join('|') : JSON.stringify(merged);
+  // hash simple y determinístico (no necesita ser criptográfico, solo estable)
+  let hash = 5381;
+  for(let i=0;i<seed.length;i++){ hash = ((hash*33) ^ seed.charCodeAt(i)) >>> 0; }
+  return 'p' + hash.toString(36);
+}
+
 function buildMergedRow(group, id){
   const merged = {};
   const conflicts = {};
@@ -3338,22 +3378,34 @@ function buildMergedRow(group, id){
     }
   });
   merged['__sources'] = sourcesUsed;
-  merged['__id'] = id;
+  merged['__id'] = generateStableId(merged);
   return { merged, conflicts };
 }
 
 // Reconstruye mergedData/conflictsMap a partir de mergedClusters (usado también
 // después de fusiones/deshacer manuales en el paso de resultados).
+let clusterByID = {}; // __id -> grupo de filas crudas (mergedClusters[i]), reemplaza el viejo acceso posicional
+
 function rebuildMergedData(){
   mergedData = [];
   conflictsMap = {};
-  conflictResolutions = {}; // las resoluciones manuales se basan en el __id; al renumerar, se reinician
-  mergedClusters.forEach((group, i)=>{
-    const id = i+1;
-    const { merged, conflicts } = buildMergedRow(group, id);
+  clusterByID = {};
+  const usedIds = new Set();
+  mergedClusters.forEach((group)=>{
+    const { merged, conflicts } = buildMergedRow(group, null);
+    let id = merged['__id'];
+    let suffix = 2;
+    while(usedIds.has(id)){
+      id = merged['__id'] + '_' + suffix;
+      suffix++;
+    }
+    usedIds.add(id);
+    merged['__id'] = id;
+    clusterByID[id] = group;
     if(Object.keys(conflicts).length>0) conflictsMap[id] = conflicts;
     mergedData.push(merged);
   });
+  Object.keys(conflictResolutions).forEach(id=>{ if(!usedIds.has(id)) delete conflictResolutions[id]; });
   mergedData.__confirmedMatches = confirmedMatchesCount;
 }
 
@@ -3370,11 +3422,14 @@ function getResolvedValue(row, col){
 function mergeSelectedRows(){
   if(selectedRowIds.size<2) return;
   snapshotState();
-  const ids = [...selectedRowIds];
+  const ids = [...selectedRowIds].map(String);
   const keep = [];
   let combined = [];
-  mergedClusters.forEach((group, i)=>{
-    if(ids.includes(i+1)) combined = combined.concat(group);
+  mergedClusters.forEach((group)=>{
+    // Encontrar el __id estable de este cluster buscando en mergedData
+    const ownerRow = mergedData.find(r=> clusterByID[r.__id]===group);
+    const ownerId = ownerRow ? String(ownerRow.__id) : null;
+    if(ownerId && ids.includes(ownerId)) combined = combined.concat(group);
     else keep.push(group);
   });
   keep.push(combined);
@@ -3386,10 +3441,10 @@ function mergeSelectedRows(){
 
 function undoMergeRow(id){
   snapshotState();
-  const idx = id-1;
-  if(idx<0 || idx>=mergedClusters.length) return;
-  const group = mergedClusters[idx];
-  if(group.length<2) return;
+  const group = clusterByID[id];
+  if(!group || group.length<2) return;
+  const idx = mergedClusters.indexOf(group);
+  if(idx===-1) return;
   const rest = mergedClusters.slice(0,idx).concat(mergedClusters.slice(idx+1));
   group.forEach(g=> rest.push([g]));
   mergedClusters = rest;
@@ -3931,7 +3986,7 @@ function renderTable(){
     let html = '<tr>' + cols.map(col=>{
       if(col==='__select') return `<td><input type="checkbox" class="row-select" data-id="${row.__id}" ${selectedRowIds.has(row.__id)?'checked':''}></td>`;
       if(col==='__actions'){
-        const cluster = mergedClusters[row.__id-1];
+        const cluster = clusterByID[row.__id];
         const undoBtn = (cluster && cluster.length>1) ? `<button class="secondary btn-undo" data-id="${row.__id}" title="Separar en registros individuales">Deshacer</button>` : '';
         const eyeBtn = `<button class="secondary btn-toggle-detail" data-id="${row.__id}" title="Ver registros originales">${expandedRowIds.has(row.__id)?'▲':'👁'}</button>`;
         const status = rowStatus[row.__id];
@@ -3973,7 +4028,7 @@ function renderTable(){
       return `<td data-id="${row.__id}" data-col="${escAttr(col)}" title="Doble click para editar">${escHtml(val)}</td>`;
     }).join('') + '</tr>';
     if(expandedRowIds.has(row.__id)){
-      const cluster = mergedClusters[row.__id-1] || [];
+      const cluster = clusterByID[row.__id] || [];
       const cards = cluster.map(g=>{
         const fields = Object.entries(g.data).filter(([k,v])=>!isEmpty(v))
           .map(([k,v])=>`<div class="candidate-field"><span class="k">${escHtml(k)}:</span> ${escHtml(v)}</div>`).join('');
@@ -3993,7 +4048,7 @@ function renderTable(){
 
   body.querySelectorAll('.row-select').forEach(chk=>{
     chk.addEventListener('change', e=>{
-      const id = parseInt(e.target.dataset.id, 10);
+      const id = e.target.dataset.id;
       if(e.target.checked) selectedRowIds.add(id);
       else selectedRowIds.delete(id);
       renderManualEditBar();
@@ -4001,12 +4056,12 @@ function renderTable(){
   });
   body.querySelectorAll('.btn-undo').forEach(btn=>{
     btn.addEventListener('click', e=>{
-      undoMergeRow(parseInt(e.target.dataset.id, 10));
+      undoMergeRow(e.target.dataset.id);
     });
   });
   body.querySelectorAll('.btn-toggle-detail').forEach(btn=>{
     btn.addEventListener('click', e=>{
-      const id = parseInt(e.target.dataset.id, 10);
+      const id = e.target.dataset.id;
       if(expandedRowIds.has(id)) expandedRowIds.delete(id);
       else expandedRowIds.add(id);
       renderTable();
@@ -4014,7 +4069,7 @@ function renderTable(){
   });
   body.querySelectorAll('.btn-comment').forEach(btn=>{
     btn.addEventListener('click', e=>{
-      openCommentPopover(btn, parseInt(btn.dataset.id, 10));
+      openCommentPopover(btn, btn.dataset.id);
     });
   });
   body.querySelectorAll('.conflict-value, .resolved-value').forEach(el=>{
@@ -4299,7 +4354,7 @@ function openCommentPopover(anchor, id){
 }
 
 function openCellEditor(td){
-  const id = parseInt(td.dataset.id, 10);
+  const id = td.dataset.id;
   const col = td.dataset.col;
   const row = mergedData.find(r=>String(r.__id)===String(id));
   if(!row) return;
@@ -4340,7 +4395,7 @@ function openCellEditor(td){
 // Reemplaza una celda con conflicto por un <select> para elegir manualmente
 // qué valor de las distintas bases queda como definitivo (o escribir uno propio).
 function openConflictPicker(target){
-  const id = parseInt(target.dataset.id, 10);
+  const id = target.dataset.id;
   const col = target.dataset.col;
   const conflict = conflictsMap[id] && conflictsMap[id][col];
   if(!conflict) return;
@@ -4700,12 +4755,12 @@ function initProfileLinks(){
   };
 
   Object.entries(directLinks).forEach(([idStr, links])=>{
-    const id = parseInt(idStr);
+    const id = idStr; // ya es string (Object.entries siempre da claves string) — NO usar parseInt, el id es estable tipo "p1a2b3c4"
     links.forEach(lk=>{
       addLink(id, lk);
       if(lk.targetId){
         const inverseType = LINK_INVERSE[lk.type] || 'familiar';
-        const myRow = mergedData.find(r=>r.__id===id);
+        const myRow = mergedData.find(r=>String(r.__id)===String(id));
         const myName = myRow ? getPersonDisplayName(myRow) : `Persona #${id}`;
         addLink(lk.targetId, { type: inverseType, targetId: id, targetName: myName, auto: true });
       }
@@ -4719,8 +4774,8 @@ function initProfileLinks(){
     const madreId = myLinks.find(lk=> lk.type==='madre' && lk.targetId)?.targetId;
     const padreId = myLinks.find(lk=> lk.type==='padre' && lk.targetId)?.targetId;
     if(madreId && padreId){
-      const madreRow = mergedData.find(r=>r.__id===madreId);
-      const padreRow = mergedData.find(r=>r.__id===padreId);
+      const madreRow = mergedData.find(r=>String(r.__id)===String(madreId));
+      const padreRow = mergedData.find(r=>String(r.__id)===String(padreId));
       if(madreRow && padreRow){
         addLink(madreId, { type:'cónyuge', targetId:padreId, targetName:getPersonDisplayName(padreRow), auto:true });
         addLink(padreId, { type:'cónyuge', targetId:madreId, targetName:getPersonDisplayName(madreRow), auto:true });
@@ -5333,7 +5388,7 @@ function renderProfileEvents(id){
 
   el.querySelectorAll('.event-related[data-target]').forEach(el2=>{
     el2.addEventListener('click', ()=>{
-      const tid = parseInt(el2.dataset.target,10);
+      const tid = el2.dataset.target;
       activeProfileId = tid;
       renderProfilesList();
       renderProfileCard(tid);
@@ -5377,7 +5432,7 @@ function openAddEventForm(id){
     const type = document.getElementById('evType').value;
     const date = document.getElementById('evDate').value;
     const desc = document.getElementById('evDesc').value.trim();
-    const relatedId = parseInt(document.getElementById('evRelated').value)||null;
+    const relatedId = document.getElementById('evRelated').value || null;
     const relatedRow = relatedId ? mergedData.find(r=>String(r.__id)===String(relatedId)) : null;
     const relatedName = relatedRow ? getPersonDisplayName(relatedRow) : '';
     const et = EVENT_TYPES.find(t=>t.id===type);
@@ -5576,7 +5631,7 @@ function renderAlertsBar(){
   bar.insertAdjacentHTML('beforebegin', alertsHtml);
   document.querySelectorAll('.alert-item[data-id]').forEach(el=>{
     el.addEventListener('click', ()=>{
-      activeProfileId = parseInt(el.dataset.id,10);
+      activeProfileId = el.dataset.id;
       renderProfilesList();
       renderProfileCard(activeProfileId);
     });
@@ -5697,7 +5752,7 @@ function renderProfileLinks(id, row){
   // Navegar al perfil vinculado al hacer click en el nombre
   linksEl.querySelectorAll('.profile-link-name[data-target]').forEach(el=>{
     el.addEventListener('click', ()=>{
-      const tid = parseInt(el.dataset.target, 10);
+      const tid = el.dataset.target;
       activeProfileId = tid;
       renderProfilesList();
       renderProfileCard(tid);
@@ -5851,7 +5906,7 @@ function openAddLinkForm(id){
   resultsEl.addEventListener('click', e=>{
     const item = e.target.closest('.link-search-item');
     if(!item) return;
-    selectedTarget = { id: parseInt(item.dataset.id,10), name: item.dataset.name };
+    selectedTarget = { id: item.dataset.id, name: item.dataset.name };
     input.value = item.dataset.name;
     resultsEl.classList.add('hidden');
     confirmBtn.disabled = false;
@@ -5976,6 +6031,8 @@ async function importProject(file){
 
     mergedClusters = project.mergedClusters || [];
     mergedData = project.mergedData || [];
+    clusterByID = {};
+    mergedData.forEach((row, i)=>{ if(mergedClusters[i]) clusterByID[row.__id] = mergedClusters[i]; });
     conflictsMap = project.conflictsMap || {};
     mergedColumns = project.mergedColumns || [];
     mergedColInfo = project.mergedColInfo || {};
