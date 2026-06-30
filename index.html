@@ -4718,6 +4718,21 @@ function getInitials(name){
 }
 
 // Detectar vínculos automáticos leyendo columnas como "Apellido y nombre de la madre"
+// Normaliza un nombre para comparar sin que importe el orden de las palabras
+// (ej: "MAIA ROSENSTEIN" debe matchear con "ROSENSTEIN, MAIA"). Se usa para
+// encontrar el perfil real de un familiar mencionado en una columna de texto
+// como "Apellido y nombre de la madre".
+function normalizeNameForMatch(str){
+  if(!str) return '';
+  let v = normalizeStr(str);
+  if(v.includes(',')){
+    const parts = v.split(',').map(p=>p.trim()).filter(Boolean);
+    if(parts.length===2) v = parts[1] + ' ' + parts[0];
+  }
+  const words = v.replace(/-/g,' ').split(' ').filter(w=> w && w!=='y' && w!=='e');
+  return words.sort().join(' ');
+}
+
 function detectAutoLinks(row){
   const found = [];
   mergedColumns.forEach(col=>{
@@ -4725,9 +4740,15 @@ function detectAutoLinks(row){
     if(isEmpty(val) || typeof val!=='string') return;
     const pattern = FAMILY_COL_PATTERNS.find(p=> p.re.test(col));
     if(!pattern) return;
-    // buscar a esa persona en mergedData por nombre
-    const valNorm = normalizeStr(val);
-    const match = mergedData.find(r=> String(r.__id)!==String(row.__id) && nameSimilarity(normalizeStr(getPersonDisplayName(r)), valNorm) > 0.85);
+    // Comparar nombres SIN importar el orden de las palabras — "Apellido y nombre
+    // de la madre" suele venir en un orden distinto al que tiene el perfil real
+    // de esa persona (que puede venir fusionado de otra base).
+    const valNorm = normalizeNameForMatch(val);
+    const match = mergedData.find(r=>{
+      if(String(r.__id)===String(row.__id)) return false;
+      const candidateNorm = normalizeNameForMatch(getPersonDisplayName(r));
+      return nameSimilarity(candidateNorm, valNorm) > 0.85;
+    });
     if(match){
       found.push({ type: pattern.type, targetId: match.__id, targetName: getPersonDisplayName(match), auto: true });
     } else {
@@ -5808,9 +5829,9 @@ function renderProfileLinks(id, row){
   // ── 2. Para cada familiar con nombre, intentar encontrar su perfil en la base ──
   Object.values(familyGroups).forEach(g=>{
     if(!g.name) return;
-    const normName = normalizeStr(g.name);
+    const normName = normalizeNameForMatch(g.name);
     const match = mergedData.find(r=>
-      r.__id !== id && nameSimilarity(normalizeStr(getPersonDisplayName(r)), normName) > 0.82
+      String(r.__id)!==String(id) && nameSimilarity(normalizeNameForMatch(getPersonDisplayName(r)), normName) > 0.82
     );
     if(match) g.targetId = match.__id;
   });
