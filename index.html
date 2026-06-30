@@ -477,6 +477,21 @@
   .profile-field-editable:hover{ background: rgba(47,107,82,0.08); outline: 1px solid var(--accent); padding: 1px 4px; }
   .profile-field-empty{ color: var(--text-dim); font-style: italic; }
 
+  /* Autocompletado desde familia */
+  .profile-autocomplete-bar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    background:rgba(173,122,53,0.10); border:1px solid var(--accent-2);
+    border-radius:4px; padding:8px 12px; margin-bottom:12px;
+  }
+  .autocomplete-hint{ font-size:11px; color:var(--text-dim); }
+
+  /* Nuevo campo */
+  .add-field-form{
+    display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end;
+    background:var(--panel-2); border:1px solid var(--border); border-radius:4px;
+    padding:12px; margin-bottom:12px;
+  }
+
   /* Links */
   .profile-links-list{ display: flex; flex-direction: column; gap: 8px; }
   .profile-link-row{
@@ -1014,7 +1029,9 @@
                 <div class="profile-section-title">
                   Datos personales
                   <span style="font-family:var(--mono);font-size:9px;color:var(--text-dim);margin-left:8px;font-weight:400;">✎ click para editar</span>
+                  <button class="secondary" id="btnAddField" style="font-size:10px; padding:3px 8px; margin-left:8px;">+ Nuevo campo</button>
                 </div>
+                <div id="profileAutocomplete" class="profile-autocomplete-bar hidden"></div>
                 <div class="profile-fields" id="profileFields"></div>
               </div>
               <div class="profile-section">
@@ -5202,6 +5219,26 @@ function renderProfileCard(id){
     return true;
   });
 
+  // Sugerencias de autocompletado desde familiares directos
+  const familySuggestions = getFamilySuggestions(id);
+  const suggestEl = document.getElementById('profileAutocomplete');
+  if(familySuggestions.length>0){
+    suggestEl.classList.remove('hidden');
+    suggestEl.innerHTML = `
+      <button class="secondary" id="btnAutocompleteFamily" style="font-size:11px;">
+        ✨ Autocompletar ${familySuggestions.length} campo${familySuggestions.length>1?'s':''} desde familia
+      </button>
+      <span class="autocomplete-hint">${familySuggestions.slice(0,3).map(s=>`${FIELD_LABELS[s.col]||s.col} (de ${s.fromName})`).join(' · ')}${familySuggestions.length>3?'…':''}</span>
+    `;
+    document.getElementById('btnAutocompleteFamily').addEventListener('click', ()=>{
+      applyFamilySuggestions(id, familySuggestions);
+      renderProfileCard(id);
+    });
+  } else {
+    suggestEl.classList.add('hidden');
+    suggestEl.innerHTML = '';
+  }
+
   const colsWithData = allCols.filter(c=> !isEmpty(getResolvedValue(row, c)));
   const colsEmpty = allCols.filter(c=> isEmpty(getResolvedValue(row, c)));
   const visibleCols = showEmptyFields ? allCols : colsWithData;
@@ -5307,6 +5344,9 @@ function renderProfileCard(id){
 
   // Agregar vínculo
   document.getElementById('btnAddLink').onclick = ()=> openAddLinkForm(id);
+
+  // Agregar campo nuevo
+  document.getElementById('btnAddField').onclick = ()=> openAddFieldForm(id);
 
   // Eventos de vida
   renderProfileEvents(id);
@@ -5662,6 +5702,73 @@ function calcAge(fechaStr){
 
 // Detectar el tipo de familiar al que pertenece una columna (madre vs padre vs familiar)
 // usando el patrón más específico — evita que "N° celular de la madre" matchee con "padre"
+// Columnas que tiene sentido compartir entre familiares directos (cónyuge, hijos, padres).
+// Deliberadamente NO incluye nombre/apellido/DNI/fecha de nacimiento (esos son únicos por persona).
+const SHAREABLE_FIELD_PATTERNS = [
+  /direcci[oó]n|domicilio|calle|address/i,
+  /ciudad|localidad|city/i,
+  /provincia|estado|region/i,
+  /pa[ií]s|country/i,
+  /c[oó]digo.*postal|cp\b|zip/i,
+  /tel[eé]fono.*(fijo|casa|hogar)|telefono$|^tel$/i,
+  /obra.social|prepaga/i,
+  /apellido$/i, // útil para hijos que comparten apellido con un padre que no lo tiene cargado
+];
+
+// Tipos de vínculo que se consideran "familia directa" para autocompletar
+// (no incluye hermano/a, tutor, etc. — esos pueden vivir en otro domicilio)
+const DIRECT_FAMILY_TYPES = new Set(['cónyuge','hijo/a','padre','madre']);
+
+function isShareableField(col){
+  return SHAREABLE_FIELD_PATTERNS.some(re=> re.test(col));
+}
+
+// Busca, para cada campo compartible vacío del perfil `id`, si algún familiar
+// directo (cónyuge, hijo/a, padre, madre) ya tiene ese dato cargado.
+// Devuelve [{col, value, fromName, fromType}]
+function getFamilySuggestions(id){
+  const row = mergedData.find(r=> String(r.__id)===String(id));
+  if(!row) return [];
+  const links = (profileLinks[id]||[]).filter(lk=> DIRECT_FAMILY_TYPES.has(lk.type) && lk.targetId);
+  if(links.length===0) return [];
+
+  const suggestions = [];
+  const shareableCols = mergedColumns.filter(c=>
+    !SKIP_IN_FIELDS.has(c) && !FAMILY_COL_PATTERNS.some(p=>p.re.test(c)) && isShareableField(c)
+  );
+
+  shareableCols.forEach(col=>{
+    const myVal = getResolvedValue(row, col);
+    if(!isEmpty(myVal)) return; // ya tiene dato, no hace falta sugerir nada
+
+    // buscar el primer familiar directo que sí tenga este dato
+    for(const lk of links){
+      const familyRow = mergedData.find(r=> String(r.__id)===String(lk.targetId));
+      if(!familyRow) continue;
+      const familyVal = getResolvedValue(familyRow, col);
+      if(!isEmpty(familyVal)){
+        suggestions.push({ col, value: familyVal, fromName: lk.targetName, fromType: lk.type });
+        break; // un solo origen por campo alcanza
+      }
+    }
+  });
+
+  return suggestions;
+}
+
+// Aplica todas las sugerencias de una vez (botón "Autocompletar todo")
+function applyFamilySuggestions(id, suggestions){
+  const row = mergedData.find(r=> String(r.__id)===String(id));
+  if(!row) return;
+  suggestions.forEach(s=>{
+    if(!conflictResolutions[id]) conflictResolutions[id]={};
+    conflictResolutions[id][s.col] = s.value;
+    row[s.col] = s.value;
+  });
+  addTimelineEntry(id, 'comment', `Autocompletado desde familia`, `${suggestions.length} campo${suggestions.length>1?'s':''}: ${suggestions.map(s=>FIELD_LABELS[s.col]||s.col).join(', ')}`);
+  saveProfilesToStorage();
+}
+
 function getFamilyType(colName){
   // orden importa: patrones más específicos primero
   const specific = [
@@ -5847,6 +5954,73 @@ function addBidirectionalLink(idA, idB, nameB, type){
       }
     }
   }
+}
+
+// Crea una columna nueva: se agrega a mergedColumns (afecta a TODOS los perfiles
+// y queda incluida en la exportación), y opcionalmente le carga un valor a esta persona.
+function openAddFieldForm(id){
+  const existing = document.getElementById('addFieldForm');
+  if(existing) existing.remove();
+
+  const fieldsEl = document.getElementById('profileFields');
+  const form = document.createElement('div');
+  form.id = 'addFieldForm';
+  form.className = 'add-field-form';
+  form.innerHTML = `
+    <div class="filter-group" style="flex:1; min-width:160px;">
+      <label>Nombre del campo</label>
+      <input type="text" id="newFieldName" placeholder="Ej: Talla de remera, Alergias…" autocomplete="off">
+    </div>
+    <div class="filter-group" style="flex:1; min-width:160px;">
+      <label>Valor para esta persona (opcional)</label>
+      <input type="text" id="newFieldValue" placeholder="Dejalo vacío si querés cargarlo después">
+    </div>
+    <div class="filter-group">
+      <button class="primary" id="btnConfirmField" style="font-size:11px; padding:7px 12px;">Crear campo</button>
+      <button class="secondary" id="btnCancelField" style="font-size:11px; padding:7px 12px;">Cancelar</button>
+    </div>
+  `;
+  fieldsEl.parentElement.insertBefore(form, fieldsEl);
+
+  const nameInput = document.getElementById('newFieldName');
+  nameInput.focus();
+
+  document.getElementById('btnCancelField').addEventListener('click', ()=> form.remove());
+
+  document.getElementById('btnConfirmField').addEventListener('click', ()=>{
+    const fieldName = nameInput.value.trim();
+    if(!fieldName){ nameInput.focus(); return; }
+    // Evitar duplicados (comparando de forma normalizada, igual que el resto de la app)
+    const normNew = normalizeStr(fieldName).replace(/[_\s]/g,'');
+    const dup = mergedColumns.find(c=> normalizeStr(c).replace(/[_\s]/g,'')===normNew);
+    if(dup){
+      alert(`Ya existe un campo llamado "${dup}". Usá ese en vez de crear uno nuevo.`);
+      return;
+    }
+    mergedColumns.push(fieldName);
+    exportColumns.push(fieldName);
+    exportColumnEnabled[fieldName] = true;
+
+    const value = document.getElementById('newFieldValue').value.trim();
+    if(value){
+      const row = mergedData.find(r=> String(r.__id)===String(id));
+      if(row){
+        const upperVal = value.toUpperCase();
+        row[fieldName] = upperVal;
+        if(!conflictResolutions[id]) conflictResolutions[id]={};
+        conflictResolutions[id][fieldName] = upperVal;
+      }
+    }
+    addTimelineEntry(id, 'comment', `Campo nuevo creado: ${fieldName}`, value ? `Valor: ${value}` : 'Sin valor inicial');
+    saveProfilesToStorage();
+    form.remove();
+    renderProfileCard(id);
+  });
+
+  nameInput.addEventListener('keydown', e=>{
+    if(e.key==='Enter') document.getElementById('btnConfirmField').click();
+    if(e.key==='Escape') form.remove();
+  });
 }
 
 function openAddLinkForm(id){
