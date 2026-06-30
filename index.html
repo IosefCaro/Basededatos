@@ -54,6 +54,39 @@
   #mode-profiles{ height:calc(100vh - 68px); display:flex; flex-direction:column; }
   #mode-profiles .profiles-layout{ flex:1; overflow:hidden; }
   #mode-import{ padding:24px; display:flex; flex-direction:column; gap:20px; }
+  #mode-manage{ padding:24px; }
+
+  /* Admin / manage table */
+  .manage-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
+  .manage-toolbar select{ min-width:200px; }
+  .manage-bulk-bar{
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+    background:rgba(179,64,47,0.08); border:1px solid var(--conflict);
+    border-radius:4px; padding:10px 14px; margin-bottom:14px;
+  }
+  .manage-bulk-bar span{ font-family:var(--mono); font-size:12px; color:var(--conflict); font-weight:600; }
+  .manage-table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:4px; max-height:600px; }
+  .manage-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .manage-table thead{ position:sticky; top:0; z-index:2; }
+  .manage-table th{
+    background:var(--panel-2); text-align:left; padding:9px 12px;
+    font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.04em;
+    color:var(--text-dim); border-bottom:1px solid var(--border); white-space:nowrap;
+  }
+  .manage-table td{ padding:8px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+  .manage-table tr:hover{ background:rgba(43,40,32,0.03); }
+  .manage-table tr.flagged{ background:rgba(179,64,47,0.05); }
+  .manage-table tr.flagged:hover{ background:rgba(179,64,47,0.09); }
+  .manage-table input[type=checkbox]{ accent-color:var(--accent); width:15px; height:15px; }
+  .manage-name{ font-weight:600; }
+  .manage-name-warn{ color:var(--conflict); }
+  .manage-meta{ font-family:var(--mono); font-size:10.5px; color:var(--text-dim); }
+  .manage-del-btn{
+    background:none; border:none; color:var(--text-dim); cursor:pointer; font-size:14px;
+  }
+  .manage-del-btn:hover{ color:var(--conflict); }
+  .manage-data-count{ font-family:var(--mono); font-size:11px; }
+  .manage-data-count.low{ color:var(--conflict); font-weight:700; }
 
   /* Import progress */
   .import-progress{
@@ -967,6 +1000,7 @@
     <div style="display:flex;align-items:center;gap:10px;">
       <nav class="main-nav">
         <button class="nav-btn active" id="navProfiles" data-panel="profiles">👤 Perfiles</button>
+        <button class="nav-btn" id="navManage" data-panel="manage">🗂 Administrar</button>
         <button class="nav-btn" id="navImport" data-panel="import">📥 Importar base</button>
       </nav>
       <button id="btnAdminPanel" onclick="openAdminPanel()" style="display:none;align-items:center;gap:6px;
@@ -1071,6 +1105,56 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ═══ MODO ADMINISTRAR (tabla masiva con eliminación) ═══ -->
+    <div id="mode-manage" class="hidden">
+      <section class="panel">
+        <h2>Administrar perfiles</h2>
+        <div class="desc">Vista completa de todas las personas cargadas. Buscá, filtrá y eliminá perfiles vacíos, duplicados o incorrectos de forma masiva.</div>
+
+        <div class="manage-toolbar">
+          <div class="search-input-wrap" style="flex:1; min-width:220px;">
+            <span class="search-icon">🔎</span>
+            <input type="text" id="manageSearch" placeholder="Buscar por nombre, DNI, email…" autocomplete="off">
+          </div>
+          <select id="manageQuickFilter">
+            <option value="">Todos los perfiles</option>
+            <option value="empty">⚠ Casi vacíos (≤1 dato cargado)</option>
+            <option value="noLinks">Sin vínculos familiares</option>
+            <option value="noSource">Sin base de origen</option>
+            <option value="pendiente">⏳ Pendientes</option>
+            <option value="dudoso">? Dudosos</option>
+          </select>
+          <button class="secondary" id="btnManageRefresh">↻ Actualizar</button>
+        </div>
+
+        <div class="manage-bulk-bar hidden" id="manageBulkBar">
+          <span id="manageSelectedCount"></span>
+          <button class="secondary" id="btnManageSelectAll">Seleccionar todos los visibles</button>
+          <button class="secondary" id="btnManageClearSelection">Deseleccionar</button>
+          <button class="primary" id="btnManageDeleteSelected" style="background:var(--conflict); border-color:var(--conflict);">🗑 Eliminar seleccionados</button>
+        </div>
+
+        <div class="manage-table-wrap">
+          <table class="manage-table">
+            <thead>
+              <tr>
+                <th style="width:30px;"><input type="checkbox" id="manageSelectAllChk"></th>
+                <th>Nombre</th>
+                <th>Roles</th>
+                <th>Campos con dato</th>
+                <th>Vínculos</th>
+                <th>Fuentes</th>
+                <th>Estado</th>
+                <th style="width:60px;"></th>
+              </tr>
+            </thead>
+            <tbody id="manageTableBody"></tbody>
+          </table>
+        </div>
+        <div class="small-note" id="manageCount"></div>
+      </section>
     </div>
 
     <!-- ═══ MODO IMPORTAR (flujo de análisis) ═══ -->
@@ -2015,11 +2099,12 @@ function checkFormatWarning(value, field){
    NAVEGACIÓN: dos modos (perfiles / importar)
 ============================================================ */
 function switchMode(mode){
-  const isProfiles = mode==='profiles';
-  document.getElementById('mode-profiles').classList.toggle('hidden', !isProfiles);
-  document.getElementById('mode-import').classList.toggle('hidden', isProfiles);
+  document.getElementById('mode-profiles').classList.toggle('hidden', mode!=='profiles');
+  document.getElementById('mode-manage').classList.toggle('hidden', mode!=='manage');
+  document.getElementById('mode-import').classList.toggle('hidden', mode!=='import');
   document.querySelectorAll('.nav-btn').forEach(b=> b.classList.toggle('active', b.dataset.panel===mode));
-  if(isProfiles) renderProfilesList();
+  if(mode==='profiles') renderProfilesList();
+  if(mode==='manage') renderManageTable();
 }
 
 function showImportStep(step){
@@ -2044,6 +2129,7 @@ function showPanel(step){
 
 // Nav buttons
 document.getElementById('navProfiles').addEventListener('click', ()=> switchMode('profiles'));
+document.getElementById('navManage').addEventListener('click', ()=> switchMode('manage'));
 document.getElementById('navImport').addEventListener('click', ()=>{ switchMode('import'); showImportStep(1); });
 
 /* ============================================================
@@ -5979,6 +6065,208 @@ function addBidirectionalLink(idA, idB, nameB, type){
 
 // Crea una columna nueva: se agrega a mergedColumns (afecta a TODOS los perfiles
 // y queda incluida en la exportación), y opcionalmente le carga un valor a esta persona.
+/* ============================================================
+   ADMINISTRAR — vista masiva de todos los perfiles, con eliminación
+============================================================ */
+let manageSearchTerm = '';
+let manageQuickFilter = '';
+let manageSelectedIds = new Set();
+
+// Cuenta cuántos campos de "datos personales" tienen valor real para una persona
+// (excluyendo columnas internas y de vínculos familiares — mismo criterio que el perfil)
+function countFilledFields(row){
+  let count = 0;
+  mergedColumns.forEach(c=>{
+    if(SKIP_IN_FIELDS.has(c)) return;
+    if(hiddenColumns.has(c)) return;
+    if(FAMILY_COL_PATTERNS.some(p=>p.re.test(c))) return;
+    if(!isEmpty(getResolvedValue(row,c))) count++;
+  });
+  return count;
+}
+
+function applyManageFilters(data){
+  let result = data;
+  if(manageSearchTerm){
+    const term = normalizeStr(manageSearchTerm);
+    result = result.filter(r=>{
+      const name = normalizeStr(getPersonDisplayName(r));
+      if(name.includes(term)) return true;
+      return mergedColumns.some(c=>{
+        const v = getResolvedValue(r,c);
+        return !isEmpty(v) && normalizeStr(String(v)).includes(term);
+      });
+    });
+  }
+  if(manageQuickFilter==='empty'){
+    result = result.filter(r=> countFilledFields(r) <= 1);
+  } else if(manageQuickFilter==='noLinks'){
+    result = result.filter(r=> !(profileLinks[r.__id]||[]).length);
+  } else if(manageQuickFilter==='noSource'){
+    result = result.filter(r=> !(r.__sources||[]).length);
+  } else if(manageQuickFilter==='pendiente'){
+    result = result.filter(r=> rowStatus[r.__id]==='pendiente');
+  } else if(manageQuickFilter==='dudoso'){
+    result = result.filter(r=> rowStatus[r.__id]==='dudoso');
+  }
+  return result;
+}
+
+function renderManageTable(){
+  const tbody = document.getElementById('manageTableBody');
+  const countEl = document.getElementById('manageCount');
+  if(!mergedData.length){
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-dim); padding:24px;">No hay perfiles cargados.</td></tr>';
+    countEl.textContent = '';
+    renderManageBulkBar();
+    return;
+  }
+
+  const filtered = applyManageFilters(mergedData);
+  countEl.textContent = filtered.length===mergedData.length
+    ? `${mergedData.length} personas`
+    : `Mostrando ${filtered.length} de ${mergedData.length} personas`;
+
+  tbody.innerHTML = filtered.map(row=>{
+    const name = getPersonDisplayName(row);
+    const filledCount = countFilledFields(row);
+    const links = (profileLinks[row.__id]||[]).length;
+    const sources = (row.__sources||[]).length;
+    const flagged = filledCount<=1 || sources===0;
+    const checked = manageSelectedIds.has(row.__id);
+    const status = rowStatus[row.__id];
+    const statusLabel = status==='ok' ? '✓ Verificado' : status==='pendiente' ? '⏳ Pendiente' : status==='dudoso' ? '? Dudoso' : '—';
+    return `<tr class="${flagged?'flagged':''}" data-id="${row.__id}">
+      <td><input type="checkbox" class="manage-row-chk" data-id="${row.__id}" ${checked?'checked':''}></td>
+      <td><span class="manage-name ${flagged?'manage-name-warn':''}">${escHtml(name)}</span></td>
+      <td>${detectRoles(row).join(', ')}</td>
+      <td><span class="manage-data-count ${filledCount<=1?'low':''}">${filledCount}</span></td>
+      <td>${links || '—'}</td>
+      <td class="manage-meta">${sources ? (row.__sources||[]).map(s=>s.replace(/\.[a-z]+$/i,'').slice(0,16)).join(', ') : '⚠ ninguna'}</td>
+      <td class="manage-meta">${statusLabel}</td>
+      <td><button class="manage-del-btn" data-id="${row.__id}" title="Eliminar este perfil">🗑</button></td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('.manage-row-chk').forEach(chk=>{
+    chk.addEventListener('change', e=>{
+      const id = e.target.dataset.id;
+      if(e.target.checked) manageSelectedIds.add(id); else manageSelectedIds.delete(id);
+      renderManageBulkBar();
+    });
+  });
+  tbody.querySelectorAll('.manage-del-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.dataset.id;
+      const row = mergedData.find(r=>String(r.__id)===String(id));
+      if(!row) return;
+      if(confirm(`¿Eliminar el perfil de "${getPersonDisplayName(row)}"? Esta acción no se puede deshacer.`)){
+        deletePeople([id]);
+      }
+    });
+  });
+
+  renderManageBulkBar();
+}
+
+function renderManageBulkBar(){
+  const bar = document.getElementById('manageBulkBar');
+  const countEl = document.getElementById('manageSelectedCount');
+  if(manageSelectedIds.size===0){ bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  countEl.textContent = `${manageSelectedIds.size} seleccionado${manageSelectedIds.size>1?'s':''}`;
+}
+
+// Elimina una o más personas: las saca de mergedData/mergedClusters/clusterByID,
+// limpia todo su estado asociado (vínculos, eventos, grupos, timeline, comentarios,
+// conflictos), y quita las referencias a ellas desde los vínculos de otras personas
+// (ej: si elimino a Ezra, su madre Maia no debe seguir mostrándolo como hijo).
+function deletePeople(ids){
+  const idSet = new Set(ids.map(String));
+
+  mergedData = mergedData.filter(r=> !idSet.has(String(r.__id)));
+  const groupsToRemove = new Set();
+  idSet.forEach(id=>{ if(clusterByID[id]) groupsToRemove.add(clusterByID[id]); });
+  mergedClusters = mergedClusters.filter(group=> !groupsToRemove.has(group));
+  idSet.forEach(id=>{
+    delete clusterByID[id];
+    delete profileLinks[id];
+    delete profileEvents[id];
+    delete profileGroups[id];
+    delete profileTimeline[id];
+    delete rowComments[id];
+    delete rowStatus[id];
+    delete profileNotes[id];
+    delete conflictResolutions[id];
+    delete conflictsMap[id];
+  });
+
+  // Quitar referencias rotas: si alguien tenía un vínculo apuntando a una persona
+  // eliminada, ese vínculo ya no tiene sentido.
+  Object.keys(profileLinks).forEach(id=>{
+    profileLinks[id] = (profileLinks[id]||[]).filter(lk=> !lk.targetId || !idSet.has(String(lk.targetId)));
+    if(profileLinks[id].length===0) delete profileLinks[id];
+  });
+
+  if(activeProfileId && idSet.has(String(activeProfileId))) activeProfileId = null;
+  manageSelectedIds = new Set([...manageSelectedIds].filter(id=> !idSet.has(String(id))));
+
+  saveDeletedPeopleToStorage(idSet);
+  renderManageTable();
+  renderProfilesList();
+}
+
+// Borra a las personas eliminadas también de Supabase (tabla personas + relacionadas)
+async function saveDeletedPeopleToStorage(idSet){
+  if(!window._supa) { saveProfilesToStorage(); return; }
+  const supa = window._supa;
+  const ids = [...idSet];
+  try{
+    await supa.from('personas').delete().in('id', ids);
+    await supa.from('vinculos').delete().in('persona_id', ids);
+    await supa.from('eventos').delete().in('persona_id', ids);
+    await supa.from('grupos').delete().in('persona_id', ids);
+    await supa.from('timeline').delete().in('persona_id', ids);
+  } catch(e){
+    console.error('Error eliminando de Supabase:', e);
+  }
+  // Igual disparamos un guardado completo para persistir los vínculos limpiados
+  // en las personas que quedan (ej: Maia ya no debe tener a Ezra en su lista)
+  saveProfilesToStorage();
+}
+
+document.getElementById('manageSearch').addEventListener('input', e=>{
+  manageSearchTerm = e.target.value;
+  renderManageTable();
+});
+document.getElementById('manageQuickFilter').addEventListener('change', e=>{
+  manageQuickFilter = e.target.value;
+  renderManageTable();
+});
+document.getElementById('btnManageRefresh').addEventListener('click', renderManageTable);
+
+document.getElementById('manageSelectAllChk').addEventListener('change', e=>{
+  const visible = applyManageFilters(mergedData);
+  if(e.target.checked) visible.forEach(r=> manageSelectedIds.add(r.__id));
+  else visible.forEach(r=> manageSelectedIds.delete(r.__id));
+  renderManageTable();
+});
+document.getElementById('btnManageSelectAll').addEventListener('click', ()=>{
+  applyManageFilters(mergedData).forEach(r=> manageSelectedIds.add(r.__id));
+  renderManageTable();
+});
+document.getElementById('btnManageClearSelection').addEventListener('click', ()=>{
+  manageSelectedIds = new Set();
+  renderManageTable();
+});
+document.getElementById('btnManageDeleteSelected').addEventListener('click', ()=>{
+  const n = manageSelectedIds.size;
+  if(n===0) return;
+  if(confirm(`¿Eliminar ${n} perfil${n>1?'es':''} seleccionado${n>1?'s':''}? Esta acción no se puede deshacer.`)){
+    deletePeople([...manageSelectedIds]);
+  }
+});
+
 function openAddFieldForm(id){
   const existing = document.getElementById('addFieldForm');
   if(existing) existing.remove();
