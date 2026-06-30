@@ -1683,6 +1683,13 @@ function setSyncStatus(state, msg=''){
   el.style.color = s.color;
   el.innerHTML = `${s.icon} ${s.text}`;
   el.style.opacity = '1';
+  el.style.pointerEvents = state==='error' ? 'auto' : 'none';
+  el.style.cursor = state==='error' ? 'pointer' : 'default';
+  if(state==='error'){
+    el.onclick = ()=> alert('Error al guardar en la base de datos:\n\n' + (msg||'Ver consola del navegador (F12) para más detalle.'));
+  } else {
+    el.onclick = null;
+  }
   if(state === 'ok') setTimeout(()=>{ el.style.opacity='0'; }, 2500);
 }
 let sources = []; // [{ name, ext, rows: [obj,...], columns: [..] }]
@@ -2035,7 +2042,20 @@ document.getElementById('navImport').addEventListener('click', ()=>{ switchMode(
 // Guarda todo el estado en Supabase.
 // Estrategia: upsert masivo de personas + tablas relacionadas.
 // Se lanza en background; los errores muestran un badge rojo.
-async function saveProfilesToStorage(){
+// ── Cola de guardado: evita que llamadas superpuestas a saveProfilesToStorage
+// se pisen entre sí (causaba que un guardado borrara lo que otro acababa de insertar).
+let _saveQueued = false;
+let _saveInProgress = false;
+function saveProfilesToStorage(){
+  if(_saveInProgress){ _saveQueued = true; return; }
+  _saveInProgress = true;
+  _doSaveProfilesToStorage().finally(()=>{
+    _saveInProgress = false;
+    if(_saveQueued){ _saveQueued = false; saveProfilesToStorage(); }
+  });
+}
+
+async function _doSaveProfilesToStorage(){
   if(!mergedData.length) return;
   if(!window._supa){ console.warn('saveProfilesToStorage: supa no disponible'); return; }
   const supa = window._supa;
@@ -2090,27 +2110,37 @@ async function saveProfilesToStorage(){
       if(error) throw error;
     }
 
-    // ── 3. tablas relacionadas: borrar y reinssertar ──────────
-    // Vínculos
-    if(Object.keys(profileLinks).length){
+    // ── 3. tablas relacionadas ──────────────────────────────
+    // Vínculos: upsert no es directo porque no tenemos un ID estable por vínculo,
+    // así que usamos delete-scoped-por-persona + insert, NUNCA delete global,
+    // para que guardados concurrentes de distintas personas no se pisen entre sí.
+    const vinculosPersonIds = Object.keys(profileLinks).filter(pid => (profileLinks[pid]||[]).length >= 0);
+    if(vinculosPersonIds.length){
+      const { error: delErr } = await supa.from('vinculos').delete().in('persona_id', vinculosPersonIds);
+      if(delErr) throw new Error('vinculos delete: ' + delErr.message);
       const vinculosRows = [];
-      Object.entries(profileLinks).forEach(([pid, links]) => {
-        (links||[]).forEach(l => vinculosRows.push({
+      vinculosPersonIds.forEach(pid => {
+        (profileLinks[pid]||[]).forEach(l => vinculosRows.push({
           persona_id: String(pid),
           tipo: l.type,
           target_id: l.targetId ? String(l.targetId) : null,
           target_name: l.targetName || null,
         }));
       });
-      await supa.from('vinculos').delete().neq('id', 0); // borra todo
-      if(vinculosRows.length) await supa.from('vinculos').insert(vinculosRows);
+      if(vinculosRows.length){
+        const { error: insErr } = await supa.from('vinculos').insert(vinculosRows);
+        if(insErr) throw new Error('vinculos insert: ' + insErr.message);
+      }
     }
 
-    // Eventos
-    if(Object.keys(profileEvents).length){
+    // Eventos (mismo patrón: scoped por persona, nunca delete global)
+    const eventosPersonIds = Object.keys(profileEvents);
+    if(eventosPersonIds.length){
+      const { error: delErr } = await supa.from('eventos').delete().in('persona_id', eventosPersonIds);
+      if(delErr) throw new Error('eventos delete: ' + delErr.message);
       const eventosRows = [];
-      Object.entries(profileEvents).forEach(([pid, evts]) => {
-        (evts||[]).forEach(e => eventosRows.push({
+      eventosPersonIds.forEach(pid => {
+        (profileEvents[pid]||[]).forEach(e => eventosRows.push({
           persona_id: String(pid),
           tipo: e.type,
           fecha: e.date || null,
@@ -2119,15 +2149,20 @@ async function saveProfilesToStorage(){
           related_name: e.relatedName || null,
         }));
       });
-      await supa.from('eventos').delete().neq('id', 0);
-      if(eventosRows.length) await supa.from('eventos').insert(eventosRows);
+      if(eventosRows.length){
+        const { error: insErr } = await supa.from('eventos').insert(eventosRows);
+        if(insErr) throw new Error('eventos insert: ' + insErr.message);
+      }
     }
 
-    // Grupos
-    if(Object.keys(profileGroups).length){
+    // Grupos (mismo patrón)
+    const gruposPersonIds = Object.keys(profileGroups);
+    if(gruposPersonIds.length){
+      const { error: delErr } = await supa.from('grupos').delete().in('persona_id', gruposPersonIds);
+      if(delErr) throw new Error('grupos delete: ' + delErr.message);
       const gruposRows = [];
-      Object.entries(profileGroups).forEach(([pid, grps]) => {
-        (grps||[]).forEach(g => gruposRows.push({
+      gruposPersonIds.forEach(pid => {
+        (profileGroups[pid]||[]).forEach(g => gruposRows.push({
           persona_id: String(pid),
           nombre: g.name,
           rol: g.role || null,
@@ -2135,23 +2170,30 @@ async function saveProfilesToStorage(){
           hasta: g.until || null,
         }));
       });
-      await supa.from('grupos').delete().neq('id', 0);
-      if(gruposRows.length) await supa.from('grupos').insert(gruposRows);
+      if(gruposRows.length){
+        const { error: insErr } = await supa.from('grupos').insert(gruposRows);
+        if(insErr) throw new Error('grupos insert: ' + insErr.message);
+      }
     }
 
-    // Timeline
-    if(Object.keys(profileTimeline).length){
+    // Timeline (mismo patrón)
+    const timelinePersonIds = Object.keys(profileTimeline);
+    if(timelinePersonIds.length){
+      const { error: delErr } = await supa.from('timeline').delete().in('persona_id', timelinePersonIds);
+      if(delErr) throw new Error('timeline delete: ' + delErr.message);
       const timelineRows = [];
-      Object.entries(profileTimeline).forEach(([pid, entries]) => {
-        (entries||[]).forEach(t => timelineRows.push({
+      timelinePersonIds.forEach(pid => {
+        (profileTimeline[pid]||[]).forEach(t => timelineRows.push({
           persona_id: String(pid),
           ts: String(t.ts),
           accion: t.action,
           detalle: t.detail || null,
         }));
       });
-      await supa.from('timeline').delete().neq('id', 0);
-      if(timelineRows.length) await supa.from('timeline').insert(timelineRows);
+      if(timelineRows.length){
+        const { error: insErr } = await supa.from('timeline').insert(timelineRows);
+        if(insErr) throw new Error('timeline insert: ' + insErr.message);
+      }
     }
 
     setSyncStatus('ok');
@@ -2203,7 +2245,8 @@ async function loadProfilesFromStorage(){
     });
 
     // ── vínculos ─────────────────────────────────────────────
-    const { data: vData } = await supa.from('vinculos').select('*');
+    const { data: vData, error: vErr } = await supa.from('vinculos').select('*');
+    if(vErr) console.error('Error cargando vínculos:', vErr.message);
     profileLinks = {};
     (vData||[]).forEach(v => {
       if(!profileLinks[v.persona_id]) profileLinks[v.persona_id] = [];
@@ -5222,6 +5265,7 @@ function renderProfileCard(id){
 /* ============================================================
    HELPER: añadir entrada al timeline y auto-guardar
 ============================================================ */
+let _timelineSaveTimer = null;
 function addTimelineEntry(id, type, action, detail){
   if(!profileTimeline[id]) profileTimeline[id] = [];
   profileTimeline[id].unshift({
@@ -5229,7 +5273,10 @@ function addTimelineEntry(id, type, action, detail){
     type, action, detail
   });
   if(profileTimeline[id].length > 100) profileTimeline[id].length = 100;
-  saveProfilesToStorage();
+  // Debounce: si se llaman varias veces seguidas (ej. al crear vínculos en cadena),
+  // se guarda una sola vez al final en lugar de una vez por cada llamada.
+  clearTimeout(_timelineSaveTimer);
+  _timelineSaveTimer = setTimeout(()=> saveProfilesToStorage(), 150);
 }
 
 function fmtDate(iso){
