@@ -1118,7 +1118,7 @@
         <div class="manage-toolbar">
           <div class="search-input-wrap" style="flex:1; min-width:220px;">
             <span class="search-icon">🔎</span>
-            <input type="text" id="manageSearch" placeholder="Buscar por nombre, DNI, email…" autocomplete="off">
+            <input type="text" id="manageSearch" placeholder="Buscar en todos los campos…" autocomplete="off">
           </div>
           <select id="manageQuickFilter">
             <option value="">Todos los perfiles</option>
@@ -1129,6 +1129,7 @@
             <option value="dudoso">? Dudosos</option>
           </select>
           <button class="secondary" id="btnManageRefresh">↻ Actualizar</button>
+          <button class="secondary" id="btnResetAllData" style="border-color:var(--conflict);color:var(--conflict);">🗑 Borrar todo</button>
         </div>
 
         <div class="manage-bulk-bar hidden" id="manageBulkBar">
@@ -1471,6 +1472,29 @@
         if(emailEl) emailEl.textContent = user.email;
         if(pill) pill.style.display = 'flex';
         if(adminBtn) adminBtn.style.display = rol==='admin' ? 'inline-flex' : 'none';
+        // Mostrar última conexión en tooltip del pill
+        supa.from('usuarios_autorizados')
+          .select('ultimo_acceso, nombre')
+          .eq('email', user.email.toLowerCase())
+          .single()
+          .then(({ data })=>{
+            if(data && pill){
+              const nombre = data.nombre || user.email;
+              const ts = data.ultimo_acceso;
+              let lastLogin = '';
+              if(ts){
+                const d = new Date(ts);
+                const diff = Math.floor((new Date()-d)/1000);
+                if(diff < 120) lastLogin = 'Primera sesión activa';
+                else if(diff < 3600) lastLogin = `Últ. conexión: hace ${Math.floor(diff/60)} min`;
+                else if(diff < 86400) lastLogin = `Últ. conexión: hace ${Math.floor(diff/3600)}h`;
+                else lastLogin = `Últ. conexión: ${d.toLocaleDateString('es-AR')}`;
+              }
+              pill.title = `${nombre}${lastLogin ? '\n'+lastLogin : ''}`;
+              // Indicador verde en el avatar
+              if(avatar) avatar.style.boxShadow = '0 0 0 2px var(--match)';
+            }
+          }).catch(()=>{});
       } else {
         if(pill) pill.style.display = 'none';
         if(adminBtn) adminBtn.style.display = 'none';
@@ -1486,9 +1510,13 @@
         throw new Error('Tu cuenta no está autorizada. Solicitá acceso al administrador.');
       }
       currentUser = data.session.user; currentUserRol = rol;
+      // Registrar timestamp de última conexión (sin await — no bloquea el login)
+      supa.from('usuarios_autorizados')
+        .update({ ultimo_acceso: new Date().toISOString() })
+        .eq('email', email.toLowerCase())
+        .then(()=>{}).catch(()=>{});
       updateUserPill(currentUser, rol);
       hideLoginScreen();
-      // Avisar al script principal que hay sesión
       window.dispatchEvent(new CustomEvent('authReady', { detail:{ user: currentUser, rol } }));
     }
 
@@ -1667,8 +1695,21 @@
         });
 
       } else if(tab==='usuarios'){
-        const { data } = await supa.from('usuarios_autorizados').select('*').order('created_at',{ascending:false});
+        const { data } = await supa.from('usuarios_autorizados').select('*').order('ultimo_acceso',{ascending:false, nullsFirst:false});
         const items = data||[];
+
+        function fmtAcceso(ts){
+          if(!ts) return '<span style="color:var(--text-dim);">Nunca</span>';
+          const d = new Date(ts);
+          const now = new Date();
+          const diff = Math.floor((now-d)/1000);
+          if(diff < 60) return '<span style="color:var(--match);font-weight:600;">● Ahora mismo</span>';
+          if(diff < 3600) return `<span style="color:var(--match);">Hace ${Math.floor(diff/60)}m</span>`;
+          if(diff < 86400) return `Hace ${Math.floor(diff/3600)}h`;
+          if(diff < 86400*7) return `Hace ${Math.floor(diff/86400)} días`;
+          return d.toLocaleDateString('es-AR');
+        }
+
         body.innerHTML = `<div style="font-size:13px;color:var(--text-dim);margin-bottom:12px;">${items.length} usuarios</div>
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
             <thead><tr style="border-bottom:2px solid var(--border);">
@@ -1676,6 +1717,7 @@
               <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">NOMBRE</th>
               <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ROL</th>
               <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ESTADO</th>
+              <th style="text-align:left;padding:6px 8px;font-family:var(--mono);font-size:11px;color:var(--text-dim);">ÚLTIMA CONEXIÓN</th>
               <th></th>
             </tr></thead>
             <tbody>${items.map(u=>`
@@ -1686,6 +1728,7 @@
                   background:${u.rol==='admin'?'var(--accent)':'var(--panel-2)'};color:${u.rol==='admin'?'var(--panel)':'var(--text-dim)'};">${u.rol}</span></td>
                 <td style="padding:8px;"><span style="font-size:11px;padding:2px 8px;border-radius:3px;font-weight:600;
                   color:${u.estado==='activo'?'var(--match)':u.estado==='bloqueado'?'var(--conflict)':'var(--accent-2)'};">${u.estado}</span></td>
+                <td style="padding:8px;font-size:12px;">${fmtAcceso(u.ultimo_acceso)}</td>
                 <td style="padding:8px;text-align:right;">${u.email!==ADMIN_EMAIL?`
                   <button data-uid="${u.id}" data-estado="${u.estado}" data-email="${escH(u.email)}" class="adm-u-btn secondary"
                     style="font-size:11px;padding:3px 8px;margin-right:4px;">${u.estado==='activo'?'Bloquear':'Activar'}</button>
@@ -5223,7 +5266,13 @@ function renderProfilesList(){
 
   const term = normalizeStr(profileSearchTerm);
   let filtered = applyProfileFilters(mergedData);
-  if(term) filtered = filtered.filter(r=> normalizeStr(getPersonDisplayName(r)).includes(term));
+  if(term) filtered = filtered.filter(r=>{
+    if(normalizeStr(getPersonDisplayName(r)).includes(term)) return true;
+    return mergedColumns.some(c=>{
+      const v = getResolvedValue(r,c);
+      return !isEmpty(v) && normalizeStr(String(v)).includes(term);
+    });
+  });
 
   const total = mergedData.length;
   const showing = filtered.length;
@@ -6114,6 +6163,38 @@ function applyManageFilters(data){
   return result;
 }
 
+function getSearchMatchContext(row, term){
+  if(!term) return '';
+  const normTerm = normalizeStr(term);
+  // Check each column for match, return first 2 that match (excluding name cols since those show in name column already)
+  const nameColNorms = new Set(['apellido','nombre','apellidodelalumno','nombredelalumno','nombreyapellido']);
+  const matches = [];
+  for(const c of mergedColumns){
+    if(matches.length >= 2) break;
+    if(nameColNorms.has(normalizeStr(c).replace(/[_\s\/]/g,''))) continue;
+    const v = getResolvedValue(row, c);
+    if(isEmpty(v)) continue;
+    if(normalizeStr(String(v)).includes(normTerm)){
+      const label = FIELD_LABELS[c] || c;
+      matches.push(`<span style="color:var(--accent-2)">${escHtml(label)}: ${escHtml(String(v).slice(0,30))}</span>`);
+    }
+  }
+  return matches.length ? `<div style="font-size:10px; font-family:var(--mono); margin-top:2px;">${matches.join(' · ')}</div>` : '';
+}
+
+function highlightTerm(text, term){
+  if(!term || !text) return escHtml(text||'');
+  const normText = normalizeStr(text);
+  const normTerm = normalizeStr(term);
+  if(!normText.includes(normTerm)) return escHtml(text);
+  // Find position in original text where normalized match occurs (same length assumption since normalize is char-preserving in length)
+  const idx = normText.indexOf(normTerm);
+  const len = normTerm.length;
+  return escHtml(text.slice(0,idx)) +
+    `<mark style="background:rgba(173,122,53,0.3);border-radius:2px;padding:0 1px;">${escHtml(text.slice(idx,idx+len))}</mark>` +
+    escHtml(text.slice(idx+len));
+}
+
 function renderManageTable(){
   const tbody = document.getElementById('manageTableBody');
   const countEl = document.getElementById('manageCount');
@@ -6138,9 +6219,13 @@ function renderManageTable(){
     const checked = manageSelectedIds.has(row.__id);
     const status = rowStatus[row.__id];
     const statusLabel = status==='ok' ? '✓ Verificado' : status==='pendiente' ? '⏳ Pendiente' : status==='dudoso' ? '? Dudoso' : '—';
+    const matchCtx = getSearchMatchContext(row, manageSearchTerm);
     return `<tr class="${flagged?'flagged':''}" data-id="${row.__id}">
       <td><input type="checkbox" class="manage-row-chk" data-id="${row.__id}" ${checked?'checked':''}></td>
-      <td><span class="manage-name ${flagged?'manage-name-warn':''}" data-id="${row.__id}" title="Ver perfil">${escHtml(name)}</span></td>
+      <td>
+        <span class="manage-name ${flagged?'manage-name-warn':''}" data-id="${row.__id}" title="Ver perfil">${highlightTerm(name, manageSearchTerm)}</span>
+        ${matchCtx}
+      </td>
       <td>${detectRoles(row).join(', ')}</td>
       <td><span class="manage-data-count ${filledCount<=1?'low':''}">${filledCount}</span></td>
       <td>${links || '—'}</td>
@@ -6251,6 +6336,124 @@ document.getElementById('manageQuickFilter').addEventListener('change', e=>{
   manageQuickFilter = e.target.value;
   renderManageTable();
 });
+document.getElementById('btnResetAllData').addEventListener('click', ()=> openResetAllDialog());
+
+function openResetAllDialog(){
+  if(!mergedData.length){ alert('No hay datos cargados.'); return; }
+  const n = mergedData.length;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'resetOverlay';
+  overlay.style.cssText = `position:fixed;inset:0;z-index:4000;background:rgba(43,40,32,0.65);
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.innerHTML = `
+    <div style="background:var(--panel);border:1px solid var(--border);border-top:4px solid var(--conflict);
+      border-radius:4px 4px 8px 8px;width:100%;max-width:440px;padding:28px 32px;
+      box-shadow:0 12px 40px rgba(43,40,32,0.35);">
+      <div style="font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;
+        letter-spacing:.07em;color:var(--conflict);margin-bottom:8px;">⚠ Zona peligrosa</div>
+      <div style="font-family:var(--display);font-size:19px;font-weight:700;margin-bottom:10px;">Borrar toda la base</div>
+      <div style="font-size:13px;color:var(--text-dim);margin-bottom:20px;line-height:1.6;">
+        Esto va a eliminar <strong style="color:var(--text)">${n} perfiles</strong> y todos sus datos asociados
+        (vínculos, eventos, grupos, historial) tanto en la app como en Supabase.<br><br>
+        Esta acción <strong style="color:var(--conflict)">no se puede deshacer</strong>.
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-family:var(--mono);font-size:11px;font-weight:600;
+          text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Ingresá tu contraseña para confirmar</label>
+        <input type="password" id="resetPassInput" placeholder="••••••••"
+          style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:4px;
+          font-size:14px;background:var(--panel-2);color:var(--text);">
+        <div id="resetPassError" style="color:var(--conflict);font-size:12px;margin-top:6px;display:none;"></div>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button id="btnResetConfirm" style="flex:1;padding:11px;background:var(--conflict);color:#fff;
+          border:none;border-radius:4px;font-family:var(--mono);font-size:12px;font-weight:700;
+          text-transform:uppercase;cursor:pointer;">Sí, borrar todo</button>
+        <button id="btnResetCancel" style="padding:11px 20px;border:1px solid var(--border);
+          border-radius:4px;background:var(--panel);font-family:var(--mono);font-size:12px;
+          cursor:pointer;">Cancelar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const passInput = document.getElementById('resetPassInput');
+  passInput.focus();
+
+  document.getElementById('btnResetCancel').addEventListener('click', ()=> overlay.remove());
+  overlay.addEventListener('click', e=>{ if(e.target===overlay) overlay.remove(); });
+
+  document.getElementById('btnResetConfirm').addEventListener('click', async ()=>{
+    const pass = passInput.value;
+    if(!pass){ showResetError('Ingresá tu contraseña.'); return; }
+    const btn = document.getElementById('btnResetConfirm');
+    btn.textContent = 'Verificando…'; btn.disabled = true;
+    try{
+      const supa = window._supa;
+      const currentUser = window._auth?.getUser();
+      if(!supa || !currentUser) throw new Error('No hay sesión activa.');
+      // Re-autenticar con la contraseña ingresada
+      const { error } = await supa.auth.signInWithPassword({
+        email: currentUser.email,
+        password: pass
+      });
+      if(error) throw new Error('Contraseña incorrecta.');
+
+      // Contraseña verificada — proceder con el borrado total
+      overlay.remove();
+      await doResetAllData();
+    } catch(err){
+      showResetError(err.message || 'Error al verificar. Intentá de nuevo.');
+      btn.textContent = 'Sí, borrar todo'; btn.disabled = false;
+    }
+  });
+
+  passInput.addEventListener('keydown', e=>{
+    if(e.key==='Enter') document.getElementById('btnResetConfirm').click();
+    if(e.key==='Escape') overlay.remove();
+  });
+}
+
+function showResetError(msg){
+  const el = document.getElementById('resetPassError');
+  if(el){ el.textContent = msg; el.style.display='block'; }
+}
+
+async function doResetAllData(){
+  setSyncStatus('saving', 'Borrando todo…');
+  try{
+    const supa = window._supa;
+    if(supa){
+      // Borrar todas las tablas relacionadas en Supabase
+      await Promise.all([
+        supa.from('personas').delete().neq('id','__placeholder__'),
+        supa.from('vinculos').delete().neq('id', 0),
+        supa.from('eventos').delete().neq('id', 0),
+        supa.from('grupos').delete().neq('id', 0),
+        supa.from('timeline').delete().neq('id', 0),
+        supa.from('sesion').delete().eq('id','singleton'),
+      ]);
+    }
+  } catch(e){ console.error('Error borrando Supabase:', e); }
+
+  // Limpiar todo el estado en memoria
+  mergedData = []; mergedClusters = []; clusterByID = {};
+  conflictsMap = {}; conflictResolutions = {}; cellEdits = {};
+  profileLinks = {}; profileNotes = {}; profileEvents = {};
+  profileGroups = {}; profileTimeline = {};
+  rowComments = {}; rowStatus = {};
+  mergedColumns = []; exportColumns = []; exportColumnEnabled = {};
+  sources = []; matchRules = []; allRowsGlobal = [];
+  activeProfileId = null; manageSelectedIds = new Set();
+  hiddenColumns = new Set();
+
+  setSyncStatus('ok', 'Base limpia');
+  renderManageTable();
+  renderProfilesList();
+  switchMode('profiles');
+}
+
 document.getElementById('btnManageRefresh').addEventListener('click', renderManageTable);
 
 document.getElementById('manageSelectAllChk').addEventListener('change', e=>{
