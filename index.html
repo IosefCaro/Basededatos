@@ -56,7 +56,21 @@
   #mode-import{ padding:24px; display:flex; flex-direction:column; gap:20px; }
   #mode-manage{ padding:24px; }
 
-  /* Admin / manage table */
+  .manage-date-filter{
+    display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    background:var(--panel-2); border:1px solid var(--border); border-radius:4px;
+    padding:10px 14px; margin-bottom:14px;
+  }
+  .manage-date-label{ font-family:var(--mono); font-size:11px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.04em; color:var(--text-dim); white-space:nowrap; }
+  .manage-date-group{ display:flex; align-items:center; gap:6px; }
+  .manage-date-group label{ font-family:var(--mono); font-size:10px; color:var(--text-dim); white-space:nowrap; }
+  .manage-date-group input[type=date],
+  .manage-date-group input[type=number]{
+    padding:5px 8px; font-size:12px; border:1px solid var(--border);
+    border-radius:3px; background:var(--panel); color:var(--text);
+  }
+  .manage-date-count{ font-family:var(--mono); font-size:11px; color:var(--accent); font-weight:600; }
   .manage-toolbar{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
   .manage-toolbar select{ min-width:200px; }
   .manage-bulk-bar{
@@ -1132,6 +1146,24 @@
           <button class="secondary" id="btnResetAllData" style="border-color:var(--conflict);color:var(--conflict);">🗑 Borrar todo</button>
         </div>
 
+        <div class="manage-date-filter">
+          <span class="manage-date-label">🎂 Nacimiento</span>
+          <div class="manage-date-group">
+            <label>Desde</label>
+            <input type="date" id="manageDateFrom">
+          </div>
+          <div class="manage-date-group">
+            <label>Hasta</label>
+            <input type="date" id="manageDateTo">
+          </div>
+          <div class="manage-date-group">
+            <label>O año exacto</label>
+            <input type="number" id="manageDateYear" placeholder="ej: 2010" min="1900" max="2030" style="width:90px;">
+          </div>
+          <button class="secondary" id="btnClearDateFilter" style="font-size:11px; padding:5px 10px;">✕ Limpiar</button>
+          <span id="manageDateCount" class="manage-date-count"></span>
+        </div>
+
         <div class="manage-bulk-bar hidden" id="manageBulkBar">
           <span id="manageSelectedCount"></span>
           <button class="secondary" id="btnManageSelectAll">Seleccionar todos los visibles</button>
@@ -1142,7 +1174,7 @@
         <div class="manage-table-wrap">
           <table class="manage-table">
             <thead>
-              <tr>
+              <tr id="manageTableHead">
                 <th style="width:30px;"><input type="checkbox" id="manageSelectAllChk"></th>
                 <th>Nombre</th>
                 <th>Roles</th>
@@ -6122,6 +6154,9 @@ function addBidirectionalLink(idA, idB, nameB, type){
 let manageSearchTerm = '';
 let manageQuickFilter = '';
 let manageSelectedIds = new Set();
+let manageDateFrom = '';   // YYYY-MM-DD
+let manageDateTo = '';     // YYYY-MM-DD
+let manageDateYear = '';   // YYYY (año exacto, ignora from/to si está puesto)
 
 // Cuenta cuántos campos de "datos personales" tienen valor real para una persona
 // (excluyendo columnas internas y de vínculos familiares — mismo criterio que el perfil)
@@ -6138,6 +6173,8 @@ function countFilledFields(row){
 
 function applyManageFilters(data){
   let result = data;
+
+  // ── Búsqueda por texto ──────────────────────────────────────
   if(manageSearchTerm){
     const term = normalizeStr(manageSearchTerm);
     result = result.filter(r=>{
@@ -6149,6 +6186,36 @@ function applyManageFilters(data){
       });
     });
   }
+
+  // ── Filtro por fecha de nacimiento ─────────────────────────
+  if(manageDateFrom || manageDateTo || manageDateYear){
+    const DOB_RE = /fecha.*nac|nac.*fecha|birthday|birth.*date|fecnac/i;
+    const dobCols = mergedColumns.filter(c=> DOB_RE.test(c));
+    if(dobCols.length > 0){
+      result = result.filter(r=>{
+        // Buscar la primera columna de fecha de nacimiento con dato
+        for(const col of dobCols){
+          const raw = getResolvedValue(r, col);
+          if(isEmpty(raw)) continue;
+          const normalized = normalizeDate(String(raw));
+          if(!normalized || normalized.length < 4) continue;
+
+          if(manageDateYear){
+            // Año exacto: comparar solo el año
+            const year = normalized.slice(0,4);
+            return year === String(manageDateYear).trim();
+          }
+          // Rango desde/hasta
+          if(manageDateFrom && normalized < manageDateFrom) return false;
+          if(manageDateTo && normalized > manageDateTo) return false;
+          return true;
+        }
+        return false; // sin fecha de nacimiento → no pasa el filtro
+      });
+    }
+  }
+
+  // ── Filtros rápidos ────────────────────────────────────────
   if(manageQuickFilter==='empty'){
     result = result.filter(r=> countFilledFields(r) <= 1);
   } else if(manageQuickFilter==='noLinks'){
@@ -6198,8 +6265,34 @@ function highlightTerm(text, term){
 function renderManageTable(){
   const tbody = document.getElementById('manageTableBody');
   const countEl = document.getElementById('manageCount');
+
+  // Update header to show/hide the DOB column
+  const showDobHeader = !!(manageDateFrom || manageDateTo || manageDateYear);
+  const thead = document.getElementById('manageTableHead');
+  if(thead){
+    thead.innerHTML = `
+      <th style="width:30px;"><input type="checkbox" id="manageSelectAllChk"></th>
+      <th>Nombre</th>
+      <th>Roles</th>
+      ${showDobHeader ? '<th style="color:var(--accent);">Fecha nac.</th>' : ''}
+      <th>Campos con dato</th>
+      <th>Vínculos</th>
+      <th>Fuentes</th>
+      <th>Estado</th>
+      <th style="width:60px;"></th>
+    `;
+    // Re-wire the select-all checkbox after rebuilding the header
+    const allChk = document.getElementById('manageSelectAllChk');
+    if(allChk) allChk.addEventListener('change', e=>{
+      const visible = applyManageFilters(mergedData);
+      if(e.target.checked) visible.forEach(r=> manageSelectedIds.add(r.__id));
+      else visible.forEach(r=> manageSelectedIds.delete(r.__id));
+      renderManageTable();
+    });
+  }
+
   if(!mergedData.length){
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-dim); padding:24px;">No hay perfiles cargados.</td></tr>';
+    tbody.innerHTML = `<tr><td colspan="${showDobHeader?9:8}" style="text-align:center; color:var(--text-dim); padding:24px;">No hay perfiles cargados.</td></tr>`;
     countEl.textContent = '';
     renderManageBulkBar();
     return;
@@ -6220,6 +6313,21 @@ function renderManageTable(){
     const status = rowStatus[row.__id];
     const statusLabel = status==='ok' ? '✓ Verificado' : status==='pendiente' ? '⏳ Pendiente' : status==='dudoso' ? '? Dudoso' : '—';
     const matchCtx = getSearchMatchContext(row, manageSearchTerm);
+    // Mostrar fecha de nacimiento en la tabla cuando hay filtro activo
+    const showDob = !!(manageDateFrom || manageDateTo || manageDateYear);
+    let dobVal = '';
+    if(showDob){
+      const DOB_RE = /fecha.*nac|nac.*fecha|birthday|birth.*date|fecnac/i;
+      const dobCol = mergedColumns.find(c=> DOB_RE.test(c));
+      if(dobCol){
+        const raw = getResolvedValue(row, dobCol);
+        if(!isEmpty(raw)){
+          const norm = normalizeDate(String(raw));
+          if(norm && norm.length >= 10) dobVal = `${norm.slice(8,10)}/${norm.slice(5,7)}/${norm.slice(0,4)}`;
+          else dobVal = String(raw);
+        }
+      }
+    }
     return `<tr class="${flagged?'flagged':''}" data-id="${row.__id}">
       <td><input type="checkbox" class="manage-row-chk" data-id="${row.__id}" ${checked?'checked':''}></td>
       <td>
@@ -6227,6 +6335,7 @@ function renderManageTable(){
         ${matchCtx}
       </td>
       <td>${detectRoles(row).join(', ')}</td>
+      ${showDob ? `<td class="manage-meta" style="color:var(--accent);">${dobVal||'—'}</td>` : ''}
       <td><span class="manage-data-count ${filledCount<=1?'low':''}">${filledCount}</span></td>
       <td>${links || '—'}</td>
       <td class="manage-meta">${sources ? (row.__sources||[]).map(s=>s.replace(/\.[a-z]+$/i,'').slice(0,16)).join(', ') : '⚠ ninguna'}</td>
@@ -6260,6 +6369,8 @@ function renderManageTable(){
   });
 
   renderManageBulkBar();
+  // Update date count display if a date filter is active
+  if(manageDateFrom || manageDateTo || manageDateYear) updateDateCount();
 }
 
 function renderManageBulkBar(){
@@ -6456,12 +6567,44 @@ async function doResetAllData(){
 
 document.getElementById('btnManageRefresh').addEventListener('click', renderManageTable);
 
-document.getElementById('manageSelectAllChk').addEventListener('change', e=>{
-  const visible = applyManageFilters(mergedData);
-  if(e.target.checked) visible.forEach(r=> manageSelectedIds.add(r.__id));
-  else visible.forEach(r=> manageSelectedIds.delete(r.__id));
-  renderManageTable();
+document.getElementById('manageDateFrom').addEventListener('change', e=>{
+  manageDateFrom = e.target.value;
+  manageDateYear = ''; // año exacto y rango son mutuamente excluyentes
+  document.getElementById('manageDateYear').value = '';
+  renderManageTable(); updateDateCount();
 });
+document.getElementById('manageDateTo').addEventListener('change', e=>{
+  manageDateTo = e.target.value;
+  manageDateYear = '';
+  document.getElementById('manageDateYear').value = '';
+  renderManageTable(); updateDateCount();
+});
+document.getElementById('manageDateYear').addEventListener('input', e=>{
+  manageDateYear = e.target.value.trim();
+  if(manageDateYear){
+    manageDateFrom = ''; manageDateTo = '';
+    document.getElementById('manageDateFrom').value = '';
+    document.getElementById('manageDateTo').value = '';
+  }
+  renderManageTable(); updateDateCount();
+});
+document.getElementById('btnClearDateFilter').addEventListener('click', ()=>{
+  manageDateFrom = ''; manageDateTo = ''; manageDateYear = '';
+  document.getElementById('manageDateFrom').value = '';
+  document.getElementById('manageDateTo').value = '';
+  document.getElementById('manageDateYear').value = '';
+  renderManageTable(); updateDateCount();
+});
+
+function updateDateCount(){
+  const el = document.getElementById('manageDateCount');
+  if(!el) return;
+  const active = manageDateFrom || manageDateTo || manageDateYear;
+  if(!active){ el.textContent = ''; return; }
+  const n = applyManageFilters(mergedData).length;
+  el.textContent = `${n} resultado${n!==1?'s':''}`;
+}
+
 document.getElementById('btnManageSelectAll').addEventListener('click', ()=>{
   applyManageFilters(mergedData).forEach(r=> manageSelectedIds.add(r.__id));
   renderManageTable();
